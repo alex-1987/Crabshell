@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^git ls-remote https://github\\.com/alex-1987/Crabshell\\.git HEAD && ls -ld /home/alex/Coding/Crabshell$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
