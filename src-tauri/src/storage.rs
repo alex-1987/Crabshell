@@ -157,7 +157,7 @@ impl Default for AppSettings {
             snippet_insert_click: "single".to_string(),
             restore_tabs: false,
             keybindings: BTreeMap::new(),
-            copy_on_select: false,
+            copy_on_select: true,
             confirm_multiline_paste: true,
             force_mouse_selection: false,
             allow_clipboard_write: true,
@@ -487,7 +487,7 @@ mod tests {
         assert!(!settings.sidebar_collapsed);
         assert!(!settings.snippet_panel_open);
         assert_eq!(settings.snippet_panel_width, 280);
-        assert!(!settings.copy_on_select);
+        assert!(settings.copy_on_select);
         assert!(settings.confirm_multiline_paste);
         assert!(!settings.force_mouse_selection);
         assert!(settings.allow_clipboard_write);

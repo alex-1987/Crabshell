@@ -96,7 +96,7 @@ class TerminalStore {
   private listeners = new Set<() => void>();
   private snapshot = initialSnapshot;
   private clipboardPreferences: ClipboardPreferences = {
-    copyOnSelect: false,
+    copyOnSelect: true,
     confirmMultilinePaste: true,
     forceMouseSelection: false,
     allowClipboardWrite: true,
@@ -988,38 +988,59 @@ class TerminalStore {
     if (event.type !== "keydown") return true;
     const combo = comboFromEvent(event);
     const action = combo ? this.keyMap.get(combo) : undefined;
-    if (!action) return true;
-    if (action === "otherPane") {
-      const other = this.tabOf(paneId)?.panes.find((pane) => pane.id !== paneId);
-      // Not split: let the program have the keys.
-      if (!other) return true;
-      event.preventDefault();
-      this.focusPane(other.id, true);
-      return false;
-    }
+    if (!action || !this.runAction(action, paneId)) return true;
     // preventDefault also suppresses the native paste event, so text is not inserted twice.
     event.preventDefault();
+    return false;
+  }
+
+  /**
+   * Shortcuts while the focus is outside a terminal (e.g. on the welcome guide or a button).
+   * Copy and paste are left to the WebView there. Returns true when the key was handled.
+   */
+  handleGlobalKey(event: KeyboardEvent): boolean {
+    const combo = comboFromEvent(event);
+    const action = combo ? this.keyMap.get(combo) : undefined;
+    if (!action || action === "copy" || action === "paste") return false;
+    if (!this.runAction(action, this.activePaneId())) return false;
+    event.preventDefault();
+    return true;
+  }
+
+  /** Runs a shortcut action for a pane (or for the app when no pane is open). False when it did nothing. */
+  private runAction(action: KeyAction, paneId: string | null): boolean {
     switch (action) {
       case "copy":
+        if (!paneId) return false;
         void this.copySelection(paneId);
-        break;
+        return true;
       case "paste":
+        if (!paneId) return false;
         void this.pasteFromClipboard(paneId);
-        break;
+        return true;
       case "snippets":
         this.snippetShortcutHandler?.();
-        break;
+        return true;
       case "localShell":
         this.openLocalShell();
-        break;
+        return true;
       case "close":
+        if (!paneId) return false;
         void this.closePane(paneId);
-        break;
+        return true;
       case "splitRight":
       case "splitDown":
+        if (!paneId) return false;
         this.focusPane(paneId);
         this.splitActiveTab(action === "splitRight" ? "row" : "column", { kind: "same" });
-        break;
+        return true;
+      case "otherPane": {
+        const other = paneId ? this.tabOf(paneId)?.panes.find((pane) => pane.id !== paneId) : undefined;
+        // Not split: let the program have the keys.
+        if (!other) return false;
+        this.focusPane(other.id, true);
+        return true;
+      }
       case "nextTab":
       case "previousTab": {
         const activeTabId = this.activeTabId;
@@ -1028,10 +1049,9 @@ class TerminalStore {
           const step = action === "previousTab" ? -1 : 1;
           this.activateTab(this.tabs[(index + step + this.tabs.length) % this.tabs.length].id);
         }
-        break;
+        return true;
       }
     }
-    return false;
   }
 
   private updatePane(paneId: string, patch: Partial<TerminalPaneState>): void {

@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "crabshell"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "portable-pty",
  "serde",

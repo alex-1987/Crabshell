@@ -17,6 +17,7 @@ import TerminalContextMenu from "./TerminalContextMenu";
 import SplitMenu from "./SplitMenu";
 import SplitView from "./SplitView";
 import { useTabDrag } from "./useTabDrag";
+import WelcomeGuide from "./WelcomeGuide";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { terminalStore } from "./terminalStore";
@@ -24,6 +25,25 @@ import type { AppSettings, SavedHost, SessionState, SessionStatus, SplitDirectio
 import "./styles.css";
 
 const HOSTS_STORAGE_KEY = "crabshell.saved-hosts.v1";
+/** Per-device UI convenience: the user hid the getting-started guide. */
+const WELCOME_HIDDEN_KEY = "crabshell.welcome-hidden.v1";
+
+function readWelcomeHidden(): boolean {
+  try {
+    return localStorage.getItem(WELCOME_HIDDEN_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeWelcomeHidden(hidden: boolean): void {
+  try {
+    if (hidden) localStorage.setItem(WELCOME_HIDDEN_KEY, "true");
+    else localStorage.removeItem(WELCOME_HIDDEN_KEY);
+  } catch {
+    // Not critical: the guide simply shows again next time.
+  }
+}
 const LEGACY_HOST_STORAGE_KEY = "crabshell.saved-host.v1";
 const SIDEBAR_WIDTH_KEY = "crabshell.sidebar-width.v1";
 const SIDEBAR_COLLAPSED_KEY = "crabshell.sidebar-collapsed.v1";
@@ -170,6 +190,7 @@ export default function TabsApp() {
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [serverQuery, setServerQuery] = useState("");
+  const [welcomeHidden, setWelcomeHidden] = useState(readWelcomeHidden);
   /** Chooser for what a new split pane runs, anchored at a button or the context menu. */
   const [splitMenu, setSplitMenu] = useState<{ direction: SplitDirection; x: number; y: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -242,6 +263,20 @@ export default function TabsApp() {
     const onResize = () => setViewportWidth(window.innerWidth);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // App shortcuts also work when no terminal has the focus (welcome guide, buttons, sidebars).
+  // Terminals handle their own keys; text fields and dialogs keep theirs.
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest(".xterm, input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
+      if (document.querySelector("[aria-modal='true']")) return;
+      terminalStore.handleGlobalKey(event);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   // Remember open tabs (local shells and server ids, nothing else) for the next start.
@@ -741,7 +776,23 @@ export default function TabsApp() {
 
         <div className={`terminal-panels${terminalSnapshot.tabs.length === 0 ? " terminal-panels-empty" : ""}`}>
           {terminalSnapshot.tabs.length === 0 ? (
-            <div className="terminal-empty"><span>{t("tabs.empty")}</span></div>
+            welcomeHidden ? (
+              <div className="terminal-empty">
+                <span>{t("tabs.empty")}<br /><button className="text-action" onClick={() => { writeWelcomeHidden(false); setWelcomeHidden(false); }} type="button">{t("welcome.show")}</button></span>
+              </div>
+            ) : (
+              <div className="terminal-empty terminal-empty-guide">
+                <WelcomeGuide
+                  doubleClick={appSettings.serverOpenClick === "double"}
+                  hasServers={savedHosts.length > 0}
+                  onAddServer={() => openEditor()}
+                  onHide={() => { writeWelcomeHidden(true); setWelcomeHidden(true); }}
+                  onLocalShell={() => terminalStore.openLocalShell()}
+                  onSettings={() => setSettingsOpen(true)}
+                  onSnippets={() => { if (!showSnippets) toggleSnippetPanel(); }}
+                />
+              </div>
+            )
           ) : terminalSnapshot.tabs.map((tab: TerminalTab) => (
             <section aria-label={t("terminal.panel", { name: titleOf(tab) })} className={`terminal-tab-panel${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-panel-active" : ""}`} key={tab.id} role="tabpanel" style={{ display: tab.id === terminalSnapshot.activeTabId ? "flex" : "none" }}>
               <div className="terminal-frame">

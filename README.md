@@ -194,7 +194,7 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Snippets are stored unencrypted in `snippets.json`, so **do not put passwords in them**.
 
 ### Clipboard
-- `Ctrl+Shift+C` copies, `Ctrl+Shift+V` pastes. Optional copy on select, and a confirmation for multiline paste (also for the context menu and middle click).
+- Selecting text copies it to the clipboard right away (on by default, can be turned off in Settings). `Ctrl+Shift+C` copies, `Ctrl+Shift+V` pastes. A confirmation for multiline paste is on as well (also for the context menu and middle click).
 - Own right-click menu (copy, paste, select all, snippets) that also works in programs that take over the mouse, such as micro, htop or mc.
 - In those programs, `Shift`+drag selects text. A setting lets plain dragging select as well.
 - OSC 52: programs on the server can copy into your local clipboard. Reading your clipboard (e.g. `Ctrl+V` in micro) asks first and can be allowed per session.

@@ -25,7 +25,7 @@ export const defaultSettings: AppSettings = {
   snippetInsertClick: "single",
   restoreTabs: false,
   keybindings: {},
-  copyOnSelect: false,
+  copyOnSelect: true,
   confirmMultilinePaste: true,
   forceMouseSelection: false,
   allowClipboardWrite: true,
