@@ -21,7 +21,7 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 
 ## Why Crabshell?
 
-- 🔒 **Everything stays on your device.** No cloud, no account, no telemetry. Crabshell runs your system `ssh`, so your keys, `ssh-agent`, `known_hosts` and `~/.ssh/config` just keep working. The app never reads or copies private keys.
+- 🔒 **Everything stays on your device.** No cloud, no account, no telemetry. Crabshell runs your system `ssh`, so your keys, `ssh-agent`, `known_hosts` and `~/.ssh/config` just keep working. The app never reads or copies private keys. Crabshell only connects to the internet on its own if you turn on update notices (off by default; one anonymous request to GitHub at most every 12 hours).
 - 🗂️ **Your servers, one click away.** Save hosts with a label, user, port, key and their own color scheme, and open each one in its own tab.
 - 🪟 **Two terminals side by side.** Split a tab left/right or top/bottom, or simply drag one tab onto another tab's terminal. Each half keeps its own session, and you can pull it back into its own tab at any time.
 - 🧩 **Snippets for the commands you keep typing.** Search with `Ctrl+Shift+S` and paste into the active terminal. Nothing is ever sent without you pressing Enter, or `Ctrl+Enter` to paste and run.
@@ -206,7 +206,9 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Single or double click for opening servers and pasting snippets, set in Settings.
 - Light, dark or system color scheme, and interface size 80–150 %.
 - Per-server designs: text, background, cursor, selection and tab color, and font size, with a built-in color picker (hex input and quick colors).
+- Fonts: pick the interface font and the terminal font from the fonts installed on your system (monospaced ones by default, Nerd Fonts included). `Ctrl+Plus` / `Ctrl+Minus` make the text of the current tab larger or smaller, `Ctrl+0` resets it.
 - English and German. The language follows the system locale by default.
+- Update notice: when a newer release is on GitHub, the footer shows "Version x.y.z available" with a link to the release page. Nothing is downloaded or installed automatically. The check is off until you turn it on: the welcome guide asks once, and ⚙ Settings → Updates has the switch and a "Check now" button. Hide the notice per version with ×.
 
 ### Shortcuts
 
@@ -221,6 +223,7 @@ These are the defaults. All terminal shortcuts can be changed under **⚙ Settin
 | `Ctrl+Shift+W` | Close pane (or the tab when it is not split) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste |
+| `Ctrl+Plus` / `Ctrl+Minus` / `Ctrl+0` | Larger / smaller / reset text size of the current tab |
 
 ### Where your data lives
 
@@ -229,7 +232,7 @@ Everything is in `~/.config/dev.crabshell.app/` (Windows: `%APPDATA%\dev.crabshe
 | File | Contents |
 | --- | --- |
 | `servers.json` | Server profiles (the key is stored as a path only, never its contents) |
-| `settings.json` | Settings and designs |
+| `settings.json` | Settings, designs and fonts |
 | `snippets.json` | Snippets. An unreadable file is moved aside to `snippets.json.broken` instead of breaking the app. |
 | `session.json` | Which tabs and split panes were open (tab type, server id, tab name and color only, never terminal contents) |
 
@@ -364,7 +367,7 @@ npm run test:e2e                      # builds a debug app and runs the checks
 
 ### Releases
 
-Pushing a tag such as `v0.2.1` builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, the Windows installer (`-setup.exe` and `.msi`), and the pacman package in an Arch Linux container. Everything is attached to a draft release for that tag, which you publish yourself after checking it.
+Pushing a tag such as `v0.2.1` builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, the Windows installer (`-setup.exe` and `.msi`), and the pacman package in an Arch Linux container. Before anything is built, a test job runs the TypeScript check and build, `cargo fmt --check`, clippy and the Rust tests. The packages are attached to a draft release for that tag, and a final job publishes it automatically once the tests and every build have succeeded. If anything fails, the release stays a draft for you to check.
 
 The version is taken from the tag (`v0.2.1` → `0.2.1`). A suffix such as `v0.3.0-beta.1` marks the release as a pre-release. You do not have to bump the version numbers in the repository first. To keep them in sync locally anyway, run `node scripts/set-version.mjs 0.2.1`, which updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`. Starting the workflow manually without a tag uses the version from `src-tauri/tauri.conf.json`.
 

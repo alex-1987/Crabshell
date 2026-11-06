@@ -1,6 +1,6 @@
 [package]
 name = "crabshell"
-version = "0.2.7"
+version = "0.2.8"
 description = "A local OpenSSH terminal manager"
 authors = ["Crabshell"]
 edition = "2021"
@@ -15,6 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+fontdb = { version = "0.23", default-features = false, features = ["fs", "memmap", "fontconfig"] }
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

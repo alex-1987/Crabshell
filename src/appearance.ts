@@ -25,6 +25,8 @@ export const defaultSettings: AppSettings = {
   snippetInsertClick: "single",
   restoreTabs: false,
   confirmClose: true,
+  checkUpdates: false,
+  updatesAsked: false,
   keybindings: {},
   copyOnSelect: true,
   confirmMultilinePaste: true,
@@ -37,6 +39,8 @@ export const defaultSettings: AppSettings = {
   themeMode: "dark",
   language: "system",
   uiScale: 100,
+  uiFont: "",
+  terminalFont: "",
 };
 
 /** ANSI palette shared by all appearances; appearances override the base colors. */

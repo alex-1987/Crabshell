@@ -1,4 +1,5 @@
 mod desktop;
+mod fonts;
 mod session;
 mod sessions;
 mod snippets;
@@ -104,6 +105,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             desktop_integration_install,
             desktop_integration_remove,
             system_locale,
+            fonts::system_fonts,
             save_servers,
             save_settings,
             snippets_list,

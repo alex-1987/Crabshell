@@ -4,6 +4,10 @@ name: release
 # Die Version kommt aus dem Tag: v0.2.1 (oder v.0.2.1) baut Version 0.2.1 – die Versionsnummern
 # in package.json/tauri.conf.json/Cargo.toml müssen dafür nicht vorher angepasst werden.
 # Bei "Run workflow" ohne Tag wird die Version aus src-tauri/tauri.conf.json genommen.
+#
+# Ablauf: test → build (Linux/Windows) → arch → publish. Die Pakete landen zuerst in einem
+# Release-Entwurf; "publish" veröffentlicht ihn nur, wenn Tests und alle Builds erfolgreich waren.
+# Schlägt etwas fehl, bleibt es ein Entwurf zum Prüfen.
 on:
   push:
     tags:
@@ -14,7 +18,44 @@ permissions:
   contents: write   # nötig, damit der Workflow das Release anlegen und Dateien hochladen darf
 
 jobs:
+  # Dieselben Prüfungen wie lokal (README → Checks). Ohne Erfolg wird nichts gebaut.
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Frontend (TypeScript check and build)
+        run: |
+          npm ci
+          npm run build
+
+      - name: Rust (format, clippy, tests)
+        working-directory: src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
   build:
+    needs: test
     permissions:
       contents: write   # nötig, damit der Workflow das Release anlegen und Dateien hochladen darf
     strategy:
@@ -88,15 +129,16 @@ jobs:
             ♥ Like Crabshell? Support it via [GitHub Sponsors](https://github.com/sponsors/alex-1987).
           # MSI erlaubt nur rein numerische Versionen: bei Vorabversionen (v0.3.0-beta.1) unter Windows nur die Setup-.exe.
           args: ${{ runner.os == 'Windows' && contains(steps.version.outputs.version, '-') && '--bundles nsis' || '' }}
-          releaseDraft: true                # erst prüfen, dann selbst veröffentlichen
+          releaseDraft: true                # Entwurf; der publish-Job veröffentlicht ihn, wenn alles grün ist
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}   # z. B. v0.3.0-beta.1
 
   # pacman-Paket für Arch-basierte Distributionen (Arch, CachyOS, EndeavourOS, Manjaro, ...).
   # Gebaut wird in einem Arch-Container mit packaging/arch/PKGBUILD und anschließend an das
   # Release-Draft angehängt, das der build-Job angelegt hat.
   arch:
-    needs: build
-    if: ${{ !cancelled() }}   # auch wenn z. B. nur der arm64-Build fehlschlägt
+    needs: [test, build]
+    # Auch wenn z. B. nur der arm64-Build fehlschlägt, aber nie nach fehlgeschlagenen Tests.
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -130,3 +172,17 @@ jobs:
             tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
           fi
           gh release upload "${tag}" packaging/arch/*.pkg.tar.zst --clobber --repo "${{ github.repository }}"
+
+  # Veröffentlicht den Entwurf, sobald Tests, alle Builds und das Arch-Paket erfolgreich waren.
+  # Nur bei Tags; bei einem manuellen Lauf ohne Tag bleibt es ein Entwurf.
+  publish:
+    needs: [test, build, arch]
+    if: ${{ github.ref_type == 'tag' && needs.test.result == 'success' && needs.build.result == 'success' && needs.arch.result == 'success' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"

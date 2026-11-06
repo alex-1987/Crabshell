@@ -11,7 +11,10 @@ export type KeyAction =
   | "previousTab"
   | "splitRight"
   | "splitDown"
-  | "otherPane";
+  | "otherPane"
+  | "zoomIn"
+  | "zoomOut"
+  | "zoomReset";
 
 /** Stored per action; actions that are missing use the defaults. An empty list disables the action. */
 export type Keybindings = Partial<Record<KeyAction, string[]>>;
@@ -27,6 +30,9 @@ export const KEY_ACTIONS: { action: KeyAction; label: MessageKey }[] = [
   { action: "splitRight", label: "keys.splitRight" },
   { action: "splitDown", label: "keys.splitDown" },
   { action: "otherPane", label: "keys.otherPane" },
+  { action: "zoomIn", label: "keys.zoomIn" },
+  { action: "zoomOut", label: "keys.zoomOut" },
+  { action: "zoomReset", label: "keys.zoomReset" },
 ];
 
 export const DEFAULT_KEYBINDINGS: Record<KeyAction, string[]> = {
@@ -40,6 +46,10 @@ export const DEFAULT_KEYBINDINGS: Record<KeyAction, string[]> = {
   splitRight: ["Ctrl+Shift+E"],
   splitDown: ["Ctrl+Shift+O"],
   otherPane: ["Ctrl+Alt+ArrowLeft", "Ctrl+Alt+ArrowRight", "Ctrl+Alt+ArrowUp", "Ctrl+Alt+ArrowDown"],
+  // "+" is its own key on German layouts, Shift+= on US layouts; "=" alone works there too.
+  zoomIn: ["Ctrl+Plus", "Ctrl+Shift+Plus", "Ctrl+="],
+  zoomOut: ["Ctrl+-"],
+  zoomReset: ["Ctrl+0"],
 };
 
 /** Same limits as the backend (storage.rs). */
@@ -64,6 +74,8 @@ export function comboFromEvent(event: KeyboardEvent): string | null {
   if (MODIFIER_KEYS.has(event.key) || event.key === "Dead" || event.key === "Unidentified") return null;
   let key = event.key;
   if (key === " ") key = "Space";
+  // "+" would clash with the separator in "Ctrl+Shift+E".
+  else if (key === "+") key = "Plus";
   else if (key.length === 1) key = key.toUpperCase();
   const parts: string[] = [];
   if (event.ctrlKey) parts.push("Ctrl");
@@ -74,7 +86,7 @@ export function comboFromEvent(event: KeyboardEvent): string | null {
   return parts.join("+");
 }
 
-const KEY_SYMBOLS: Record<string, string> = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Escape: "Esc" };
+const KEY_SYMBOLS: Record<string, string> = { ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓", Escape: "Esc", Plus: "+" };
 
 /** "Ctrl+Alt+ArrowLeft" → "Ctrl+Alt+←". */
 export function displayCombo(combo: string): string {

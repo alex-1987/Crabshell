@@ -14,6 +14,8 @@ export type ServerFilters = {
 };
 
 type ServerSidebarProps = {
+  /** App version shown next to the name ("" while loading). */
+  version: string;
   servers: SavedHost[];
   storageReady: boolean;
   storageError: string;
@@ -29,7 +31,7 @@ type ServerSidebarProps = {
 };
 
 /** Left-hand server list with search, categories and the OpenSSH note. */
-export default function ServerSidebar({ servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onEdit, onOpen, onRemove }: ServerSidebarProps) {
+export default function ServerSidebar({ version, servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onEdit, onOpen, onRemove }: ServerSidebarProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const usable = storageReady && !storageError;
   const setQuery = (query: string) => onFilters({ ...filters, query });
@@ -39,11 +41,13 @@ export default function ServerSidebar({ servers, storageReady, storageError, not
       <div className="sidebar-brand-row">
         <div className="brand-row">
           <BrandMark />
-          <div><div className="brand-name">crabshell</div><div className="brand-caption">LOCAL SSH WORKSPACE</div></div>
+          <div>
+            <div className="brand-name">crabshell{version && <span className="brand-version">v{version}</span>}</div>
+            <div className="brand-caption">LOCAL SSH WORKSPACE</div>
+          </div>
         </div>
         <button aria-label={t("sidebar.hide")} className="icon-button sidebar-toggle" disabled={!storageReady} onClick={onHide} title={t("sidebar.hide")} type="button"><span aria-hidden="true">‹</span></button>
       </div>
-      <div className="privacy-line"><span className="privacy-indicator" /><span>{t("sidebar.privacy")}</span></div>
       <div className="server-list-heading">
         <div><h1>{t("sidebar.servers")}</h1><span>{servers.length}</span></div>
         <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!usable} onClick={onAdd} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>

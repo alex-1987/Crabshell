@@ -4,6 +4,10 @@ import { terminalStore } from "./terminalStore";
 
 type WelcomeGuideProps = {
   hasServers: boolean;
+  /** The update question was answered; then the step only shows the current choice. */
+  updatesAsked: boolean;
+  checkUpdates: boolean;
+  onUpdateChoice: (enabled: boolean) => void;
   doubleClick: boolean;
   onAddServer: () => void;
   onLocalShell: () => void;
@@ -17,7 +21,7 @@ function Keys({ combo }: { combo: string }) {
 }
 
 /** Short getting-started guide in the empty terminal area (shown while no tab is open). */
-export default function WelcomeGuide({ hasServers, doubleClick, onAddServer, onLocalShell, onSnippets, onSettings, onHide }: WelcomeGuideProps) {
+export default function WelcomeGuide({ hasServers, updatesAsked, checkUpdates, onUpdateChoice, doubleClick, onAddServer, onLocalShell, onSnippets, onSettings, onHide }: WelcomeGuideProps) {
   const key = (action: Parameters<typeof terminalStore.shortcutLabel>[0]) => terminalStore.shortcutLabel(action);
   return (
     <div className="welcome">
@@ -30,6 +34,18 @@ export default function WelcomeGuide({ hasServers, doubleClick, onAddServer, onL
       </div>
 
       <ol className="welcome-steps">
+        <li className={updatesAsked ? "welcome-step-done" : ""}>
+          <div className="welcome-step-text">
+            <strong>{t("welcome.updatesTitle")}</strong>
+            <span>{updatesAsked ? (checkUpdates ? t("welcome.updatesOn") : t("welcome.updatesOff")) : t("welcome.updatesText")}</span>
+          </div>
+          {!updatesAsked && (
+            <div className="welcome-choice">
+              <button className="button button-primary welcome-action" onClick={() => onUpdateChoice(true)} type="button">{t("welcome.updatesYes")}</button>
+              <button className="button button-secondary welcome-action" onClick={() => onUpdateChoice(false)} type="button">{t("welcome.updatesNo")}</button>
+            </div>
+          )}
+        </li>
         <li className={hasServers ? "welcome-step-done" : ""}>
           <div className="welcome-step-text">
             <strong>{t("welcome.addTitle")}</strong>
@@ -52,8 +68,17 @@ export default function WelcomeGuide({ hasServers, doubleClick, onAddServer, onL
         </li>
         <li>
           <div className="welcome-step-text">
+            <strong>{t("welcome.tabsTitle")}</strong>
+            <span>
+              {t("welcome.tabsRename")} {t("welcome.tabsDrag")} {t("welcome.tabsSwitch")} <Keys combo={key("nextTab")} />,
+              {" "}{t("welcome.tabsZoom")} <Keys combo={key("zoomIn")} /> <Keys combo={key("zoomOut")} />.
+            </span>
+          </div>
+        </li>
+        <li>
+          <div className="welcome-step-text">
             <strong>{t("welcome.splitTitle")}</strong>
-            <span>{t("welcome.splitText")} <Keys combo={key("splitRight")} /> <Keys combo={key("splitDown")} /></span>
+            <span>{t("welcome.splitText")} <Keys combo={key("splitRight")} /> <Keys combo={key("splitDown")} /> {t("welcome.splitMore")}</span>
           </div>
         </li>
         <li>

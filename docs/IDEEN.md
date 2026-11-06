@@ -28,7 +28,7 @@ Gesammelte Ideen für kommende Versionen (Stand: 0.2.6, November 2026). Noch nic
 7. **Favoriten / zuletzt verwendet** oben in der Serverliste.
 8. **In allen Panes gleichzeitig tippen** (Broadcast) im Split View, mit deutlicher Warnanzeige.
 9. **Snippets importieren und exportieren** als JSON, auch zum Teilen.
-10. **Schriftart wählbar**, dazu Zoom pro Tab mit `Ctrl+Plus` und `Ctrl+Minus`.
+10. ~~**Schriftart wählbar**, dazu Zoom pro Tab mit `Ctrl+Plus` und `Ctrl+Minus`.~~ ✅ umgesetzt (Oberfläche und Terminal getrennt)
 11. **Sitzungsdauer** in der Statusleiste („verbunden seit 1 h 12 min“).
 
 ## Größere Brocken

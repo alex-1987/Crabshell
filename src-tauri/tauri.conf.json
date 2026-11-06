@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Crabshell",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "identifier": "dev.crabshell.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -24,7 +24,7 @@
       "capabilities": [
         "main-capability"
       ],
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost https://api.github.com"
     }
   },
   "bundle": {

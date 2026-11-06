@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
 import { t, translateBackend } from "./i18n";
+import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import { decodeOsc52, encodeOsc52 } from "./osc52";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
@@ -24,6 +25,10 @@ const MAX_WRITE_BYTES = 32 * 1024;
 const MAX_PANES = 2;
 /** Same limit as the backend (session.json). */
 export const MAX_TAB_TITLE_CHARS = 64;
+/** Per-tab zoom (Ctrl+Plus / Ctrl+Minus) in font pixels on top of the design's font size. */
+const MIN_ZOOM = -8;
+const MAX_ZOOM = 16;
+const MIN_FONT_SIZE = 6;
 export const MIN_SPLIT_RATIO = 0.15;
 export const MAX_SPLIT_RATIO = 0.85;
 
@@ -92,6 +97,7 @@ class TerminalStore {
   private contextMenu: TerminalContextMenu | null = null;
   private pendingClipboardRead: (PendingClipboardRead & { target: string }) | null = null;
   private appearances: Appearance[] = [builtinAppearance];
+  private terminalFont = DEFAULT_TERMINAL_FONT;
   private defaultAppearanceId = builtinAppearance.id;
   private localAppearanceId = "";
   private bindings = resolveKeybindings(undefined);
@@ -289,6 +295,35 @@ class TerminalStore {
     for (const tab of this.tabs) for (const pane of tab.panes) this.applyAppearance(pane.id);
   }
 
+  /** Terminal font from Settings → Fonts ("" = default); applies to open terminals too. */
+  setTerminalFont(name: string): void {
+    const font = fontStack(name, DEFAULT_TERMINAL_FONT);
+    if (font === this.terminalFont) return;
+    this.terminalFont = font;
+    for (const [paneId, runtime] of this.runtimes) {
+      runtime.terminal.options.fontFamily = font;
+      // Other glyph widths change the cell grid, so the PTY needs the new dimensions.
+      requestAnimationFrame(() => this.fitPane(paneId));
+    }
+  }
+
+  /** Ctrl+Plus / Ctrl+Minus: `step` font pixels for every pane of the tab; 0 resets. */
+  zoomTab(tabId: string, step: number): void {
+    const tab = this.tabs.find((item) => item.id === tabId);
+    if (!tab) return;
+    const fontZoom = step === 0 ? 0 : Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, tab.fontZoom + step));
+    if (fontZoom === tab.fontZoom) return;
+    this.tabs = this.tabs.map((item) => item.id === tabId ? { ...item, fontZoom } : item);
+    for (const pane of tab.panes) this.applyAppearance(pane.id);
+    this.publish();
+  }
+
+  /** The design's font size plus the tab zoom. */
+  private fontSizeFor(tabId: string, appearance: Appearance): number {
+    const zoom = this.tabs.find((tab) => tab.id === tabId)?.fontZoom ?? 0;
+    return Math.max(MIN_FONT_SIZE, appearance.fontSize + zoom);
+  }
+
   /** Keeps open panes in sync after server profiles were edited or removed. */
   updateServers(servers: SavedHost[]): void {
     for (const tab of this.tabs) {
@@ -308,8 +343,9 @@ class TerminalStore {
     if (!pane || !runtime) return;
     const appearance = this.appearanceFor(pane.kind, pane.server);
     runtime.terminal.options.theme = terminalTheme(appearance);
-    if (runtime.terminal.options.fontSize !== appearance.fontSize) {
-      runtime.terminal.options.fontSize = appearance.fontSize;
+    const fontSize = this.fontSizeFor(runtime.tabId, appearance);
+    if (runtime.terminal.options.fontSize !== fontSize) {
+      runtime.terminal.options.fontSize = fontSize;
       // A new font size changes the cell grid, so the PTY needs the new dimensions.
       requestAnimationFrame(() => this.fitPane(paneId));
     }
@@ -415,6 +451,7 @@ class TerminalStore {
       activePaneId: pane.id,
       customTitle: "",
       customColor: "",
+      fontZoom: 0,
       kind: pane.kind,
       title: pane.title,
       server: pane.server,
@@ -537,7 +574,7 @@ class TerminalStore {
     const remaining = tab.panes.filter((item) => item.id !== paneId);
     const index = this.tabs.findIndex((item) => item.id === tab.id);
     const updated = withActivePane({ ...tab, panes: remaining, split: null, activePaneId: remaining[0].id });
-    const created = withActivePane({ ...updated, id: newTabId, panes: [pane], activePaneId: pane.id, splitRatio: 0.5, customTitle: "", customColor: "" });
+    const created = withActivePane({ ...updated, id: newTabId, panes: [pane], activePaneId: pane.id, splitRatio: 0.5, customTitle: "", customColor: "", fontZoom: 0 });
     this.tabs = [...this.tabs.slice(0, index), updated, created, ...this.tabs.slice(index + 1)];
     this.activateTab(newTabId);
   }
@@ -570,8 +607,8 @@ class TerminalStore {
       allowProposedApi: false,
       cursorBlink: true,
       convertEol: false,
-      fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace',
-      fontSize: appearance.fontSize,
+      fontFamily: this.terminalFont,
+      fontSize: this.fontSizeFor(tabId, appearance),
       lineHeight: 1.35,
       scrollback: 4000,
       theme: terminalTheme(appearance),
@@ -1044,6 +1081,14 @@ class TerminalStore {
         // Not split: let the program have the keys.
         if (!other) return false;
         this.focusPane(other.id, true);
+        return true;
+      }
+      case "zoomIn":
+      case "zoomOut":
+      case "zoomReset": {
+        const tabId = paneId ? this.runtimes.get(paneId)?.tabId : this.activeTabId;
+        if (!tabId) return false;
+        this.zoomTab(tabId, action === "zoomIn" ? 1 : action === "zoomOut" ? -1 : 0);
         return true;
       }
       case "nextTab":

@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
+import { DEFAULT_TERMINAL_FONT, DEFAULT_UI_FONT, fontStack } from "./fonts";
 import { t } from "./i18n";
 import type { ThemeMode } from "./terminalTypes";
 
@@ -49,7 +50,7 @@ function useSystemTheme(enabled: boolean): ResolvedTheme {
   return theme;
 }
 
-export function useUiTheme(mode: ThemeMode, uiScale: number): void {
+export function useUiTheme(mode: ThemeMode, uiScale: number, uiFont: string, terminalFont: string): void {
   const systemTheme = useSystemTheme(mode === "system");
   const resolved = mode === "system" ? systemTheme : mode;
 
@@ -60,4 +61,11 @@ export function useUiTheme(mode: ThemeMode, uiScale: number): void {
   useEffect(() => {
     document.documentElement.style.setProperty("--ui-zoom", String(uiScale / 100));
   }, [uiScale]);
+
+  // Small monospace labels in the interface follow the terminal font.
+  useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty("--font-ui", fontStack(uiFont, DEFAULT_UI_FONT));
+    root.setProperty("--font-mono", fontStack(terminalFont, DEFAULT_TERMINAL_FONT));
+  }, [uiFont, terminalFont]);
 }

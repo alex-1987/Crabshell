@@ -58,6 +58,10 @@ export type AppSettings = {
   restoreTabs: boolean;
   /** Ask before closing the window while terminal sessions are still running. */
   confirmClose: boolean;
+  /** Look for a newer release on GitHub at start (one anonymous request); off by default. */
+  checkUpdates: boolean;
+  /** The user answered the update question in the welcome guide (or changed the setting). */
+  updatesAsked: boolean;
   /** Custom terminal shortcuts per action; missing actions use the defaults. */
   keybindings: Keybindings;
   copyOnSelect: boolean;
@@ -76,6 +80,10 @@ export type AppSettings = {
   language: LanguageSetting;
   /** UI zoom in percent (terminal font size is set per appearance). */
   uiScale: number;
+  /** Font family for the interface; "" = built-in default. */
+  uiFont: string;
+  /** Font family for the terminals; "" = built-in default. */
+  terminalFont: string;
 };
 
 export type SessionStatus = "disconnected" | "connecting" | "connected" | "disconnecting" | "failed";
@@ -117,6 +125,8 @@ export type TerminalTab = {
   customTitle: string;
   /** Tab color chosen by the user ("#rrggbb"); empty means the tab color of the design. */
   customColor: string;
+  /** Ctrl+Plus / Ctrl+Minus zoom of the tab in font pixels (0 = the design's size). */
+  fontZoom: number;
   // Mirrored from the active pane, so tab-level UI (title, status, reconnect) keeps working.
   kind: TabKind;
   title: string;

@@ -1,6 +1,9 @@
 import { useState } from "react";
 import ColorField from "./ColorField";
 import DesktopIntegration from "./DesktopIntegration";
+import FontSettings from "./FontSettings";
+import UpdateCheckButton from "./UpdateCheckButton";
+import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import ShortcutList from "./ShortcutList";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
 import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
@@ -123,6 +126,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <button className="text-action" disabled={draft.uiScale === 100} onClick={() => setDraft({ ...draft, uiScale: 100 })} type="button">{t("settings.reset")}</button>
             </div>
             <div className="form-footnote">{t("settings.uiScaleHint")}</div>
+            <FontSettings onChange={(fonts) => setDraft({ ...draft, ...fonts })} terminalFont={draft.terminalFont} uiFont={draft.uiFont} />
             <h3>{t("settings.workspace")}</h3>
             <label className="field-label" htmlFor="server-open-click">{t("settings.serverOpenClick")}</label>
             <select id="server-open-click" onChange={(event) => setDraft({ ...draft, serverOpenClick: event.target.value as ClickMode })} value={draft.serverOpenClick}>
@@ -145,6 +149,13 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <span>{t("settings.confirmClose")}</span>
             </label>
             <div className="form-footnote">{t("settings.confirmCloseHint")}</div>
+            <h3>{t("settings.updates")}</h3>
+            <label className="sidebar-setting">
+              <input checked={draft.checkUpdates} onChange={(event) => setDraft({ ...draft, checkUpdates: event.target.checked, updatesAsked: true })} type="checkbox" />
+              <span>{t("settings.checkUpdates")}</span>
+            </label>
+            <div className="form-footnote">{t("settings.checkUpdatesHint")}</div>
+            <UpdateCheckButton />
             <h3>{t("settings.clipboard")}</h3>
             <label className="sidebar-setting">
               <input checked={draft.copyOnSelect} onChange={(event) => setDraft({ ...draft, copyOnSelect: event.target.checked })} type="checkbox" />
@@ -212,7 +223,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <label className="field-label" htmlFor="appearance-font-size">{t("settings.fontSize")} <span>{selected.fontSize} px</span></label>
               <input className="range-input" id="appearance-font-size" max={MAX_FONT_SIZE} min={MIN_FONT_SIZE} onChange={(event) => updateAppearance({ fontSize: Number(event.target.value) })} type="range" value={selected.fontSize} />
 
-              <div className="appearance-preview" style={{ background: selected.background, color: selected.foreground, fontSize: `${selected.fontSize}px`, borderTopColor: selected.tabColor }}>
+              <div className="appearance-preview" style={{ background: selected.background, color: selected.foreground, fontFamily: fontStack(draft.terminalFont, DEFAULT_TERMINAL_FONT), fontSize: `${selected.fontSize}px`, borderTopColor: selected.tabColor }}>
                 <div>admin@server:~$ ls -la</div>
                 <div><span style={{ background: `${selected.selection}88` }}>{t("settings.previewSelected")}</span> {t("settings.previewNormal")}</div>
                 <div>admin@server:~$ <span className="appearance-preview-cursor" style={{ background: selected.cursor }} /></div>

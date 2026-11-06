@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import AboutDialog from "./AboutDialog";
 import { defaultSettings } from "./appearance";
@@ -25,6 +26,7 @@ import type { AppSettings, SavedHost, SessionState, SplitDirection, SplitTarget 
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { usePanelLayout } from "./usePanelLayout";
 import { useSnippets } from "./useSnippets";
+import { useUpdateCheck } from "./updates";
 import { useTabDrag } from "./useTabDrag";
 import WelcomeGuide from "./WelcomeGuide";
 import "./styles.css";
@@ -76,6 +78,8 @@ export default function TabsApp() {
   const [closeConfirm, setCloseConfirm] = useState<number | null>(null);
 
   const usable = storageReady && !storageError;
+  // Only after the settings are loaded, so a disabled check never sends a request.
+  const { update, dismiss: dismissUpdate } = useUpdateCheck(storageReady && appSettings.checkUpdates, appVersion);
   const snippets = useSnippets();
   const panels = usePanelLayout({
     enabled: usable,
@@ -85,7 +89,7 @@ export default function TabsApp() {
 
   // Set synchronously during render so every t() call below (and in children) uses it.
   setLanguage(resolveLanguage(appSettings.language, systemLocale));
-  useUiTheme(appSettings.themeMode, appSettings.uiScale);
+  useUiTheme(appSettings.themeMode, appSettings.uiScale, appSettings.uiFont, appSettings.terminalFont);
 
   const terminalSnapshot = useSyncExternalStore(terminalStore.subscribe, terminalStore.getSnapshot);
   const { tabs, activeTabId } = terminalSnapshot;
@@ -207,6 +211,7 @@ export default function TabsApp() {
     setAppSettings(normalized);
     terminalStore.setClipboardPreferences(normalized);
     terminalStore.setKeybindings(normalized.keybindings);
+    terminalStore.setTerminalFont(normalized.terminalFont);
     terminalStore.setAppearances(normalized.appearances, normalized.defaultAppearanceId, normalized.localAppearanceId);
     return normalized;
   }
@@ -326,6 +331,7 @@ export default function TabsApp() {
       {panels.showServers && (
         <>
           <ServerSidebar
+            version={appVersion}
             doubleClick={appSettings.serverOpenClick === "double"}
             filters={serverFilters}
             notice={sidebarNotice}
@@ -401,7 +407,10 @@ export default function TabsApp() {
             <div className="terminal-empty terminal-empty-guide">
               <WelcomeGuide
                 doubleClick={appSettings.serverOpenClick === "double"}
+                checkUpdates={appSettings.checkUpdates}
                 hasServers={savedHosts.length > 0}
+                onUpdateChoice={(enabled) => persistSettings({ ...settingsRef.current, checkUpdates: enabled, updatesAsked: true })}
+                updatesAsked={appSettings.updatesAsked}
                 onAddServer={() => openServerDialog(null)}
                 onHide={() => setWelcome(true)}
                 onLocalShell={() => terminalStore.openLocalShell()}
@@ -413,7 +422,15 @@ export default function TabsApp() {
         </div>
 
         <footer className="workspace-footer">
-          <span>Crabshell <b>{appVersion}</b></span>
+          <span className="footer-version">
+            Crabshell <b>{appVersion}</b>
+            {update && (
+              <span className="update-notice">
+                <button className="update-link" onClick={() => void openUrl(update.url).catch(() => undefined)} title={t("update.open", { version: update.version })} type="button">↑ {t("update.available", { version: update.version })}</button>
+                <button aria-label={t("update.dismiss")} className="update-dismiss" onClick={dismissUpdate} title={t("update.dismiss")} type="button">×</button>
+              </span>
+            )}
+          </span>
           <span>{footerShortcuts()}</span>
         </footer>
       </main>

@@ -85,6 +85,11 @@ pub(crate) struct AppSettings {
     pub restore_tabs: bool,
     /// Ask before closing the window while terminal sessions are still running.
     pub confirm_close: bool,
+    /// Look for a newer release on GitHub at start (one anonymous request). Off until the user
+    /// turns it on (welcome guide or settings).
+    pub check_updates: bool,
+    /// The user answered the update question in the welcome guide (or changed the setting).
+    pub updates_asked: bool,
     /// Custom terminal shortcuts: action → key combos (e.g. "Ctrl+Shift+E"). Missing actions use the defaults.
     pub keybindings: BTreeMap<String, Vec<String>>,
     pub copy_on_select: bool,
@@ -105,6 +110,10 @@ pub(crate) struct AppSettings {
     pub language: String,
     /// UI zoom in percent; the terminal font size comes from the appearance instead.
     pub ui_scale: u16,
+    /// Font family for the interface; empty means the built-in default.
+    pub ui_font: String,
+    /// Font family for the terminals; empty means the built-in default.
+    pub terminal_font: String,
 }
 
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
@@ -112,7 +121,7 @@ const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
 /// Same list as KEY_ACTIONS in src/keybindings.ts.
-const KEY_ACTIONS: [&str; 10] = [
+const KEY_ACTIONS: [&str; 13] = [
     "copy",
     "paste",
     "snippets",
@@ -123,6 +132,9 @@ const KEY_ACTIONS: [&str; 10] = [
     "splitRight",
     "splitDown",
     "otherPane",
+    "zoomIn",
+    "zoomOut",
+    "zoomReset",
 ];
 const MAX_BINDINGS_PER_ACTION: usize = 4;
 const MAX_COMBO_LEN: usize = 40;
@@ -149,6 +161,11 @@ fn normalize_keybindings(bindings: &mut BTreeMap<String, Vec<String>>) {
 }
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 
+/// Empty (default) or a font family name that is safe to put into CSS.
+fn valid_font(name: &str) -> bool {
+    name.is_empty() || (name == name.trim() && crate::fonts::usable_name(name))
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -160,6 +177,8 @@ impl Default for AppSettings {
             snippet_insert_click: "single".to_string(),
             restore_tabs: false,
             confirm_close: true,
+            check_updates: false,
+            updates_asked: false,
             keybindings: BTreeMap::new(),
             copy_on_select: true,
             confirm_multiline_paste: true,
@@ -172,6 +191,8 @@ impl Default for AppSettings {
             theme_mode: "dark".to_string(),
             language: "system".to_string(),
             ui_scale: 100,
+            ui_font: String::new(),
+            terminal_font: String::new(),
         }
     }
 }
@@ -278,6 +299,11 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         settings.ui_scale = AppSettings::default().ui_scale;
     }
+    for font in [&mut settings.ui_font, &mut settings.terminal_font] {
+        if !valid_font(font) {
+            font.clear();
+        }
+    }
     if !CLICK_MODES.contains(&settings.server_open_click.as_str()) {
         settings.server_open_click = AppSettings::default().server_open_click;
     }
@@ -332,6 +358,9 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
     }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         return Err("The UI scale is outside the supported range".to_string());
+    }
+    if !valid_font(&settings.ui_font) || !valid_font(&settings.terminal_font) {
+        return Err("Invalid font name".to_string());
     }
     validate_appearances(settings)?;
     write_json(app, SETTINGS_FILE, settings)
@@ -634,6 +663,8 @@ mod tests {
         assert_eq!(settings.snippet_insert_click, "single");
         assert!(!settings.restore_tabs);
         assert!(settings.confirm_close);
+        assert!(!settings.check_updates && !settings.updates_asked);
+        assert!(settings.ui_font.is_empty() && settings.terminal_font.is_empty());
     }
 
     #[test]
