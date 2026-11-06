@@ -1,3 +1,4 @@
+mod desktop;
 mod session;
 mod snippets;
 mod storage;
@@ -29,6 +30,26 @@ fn save_servers(app: tauri::AppHandle, servers: Vec<storage::ServerProfile>) -> 
 #[tauri::command]
 fn save_settings(app: tauri::AppHandle, settings: storage::AppSettings) -> Result<(), String> {
     storage::save_settings(&app, &settings)
+}
+
+#[tauri::command]
+fn desktop_integration_status() -> desktop::DesktopIntegration {
+    desktop::status()
+}
+
+#[tauri::command]
+fn desktop_integration_install() -> Result<desktop::DesktopIntegration, String> {
+    desktop::install()
+}
+
+#[tauri::command]
+fn desktop_integration_remove() -> Result<desktop::DesktopIntegration, String> {
+    desktop::remove()
+}
+
+#[tauri::command]
+fn save_session(app: tauri::AppHandle, session: storage::SessionState) -> Result<(), String> {
+    storage::save_session(&app, &session)
 }
 
 fn snippets_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -443,6 +464,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             load_persistent_data,
+            save_session,
+            desktop_integration_status,
+            desktop_integration_install,
+            desktop_integration_remove,
             system_locale,
             save_servers,
             save_settings,

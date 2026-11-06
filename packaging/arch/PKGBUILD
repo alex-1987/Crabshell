@@ -13,7 +13,7 @@ pkgrel=1
 pkgdesc="Local SSH manager and terminal built on the system OpenSSH client"
 arch=('x86_64' 'aarch64')
 url="https://github.com/alex-1987/Crabshell"
-license=('unknown')
+license=('MIT' 'Apache-2.0')
 depends=('webkit2gtk-4.1' 'gtk3' 'openssh' 'hicolor-icon-theme')
 makedepends=('rust' 'cargo' 'nodejs' 'npm')
 # LTO flags from makepkg.conf break some Rust/C dependencies; Tauri strips its own symbols.
@@ -35,6 +35,7 @@ package() {
   cd "${_root}"
   install -Dm755 src-tauri/target/release/crabshell "${pkgdir}/usr/bin/crabshell"
   install -Dm644 packaging/arch/crabshell.desktop "${pkgdir}/usr/share/applications/crabshell.desktop"
+  install -Dm644 LICENSE-MIT LICENSE-APACHE -t "${pkgdir}/usr/share/licenses/${pkgname}/"
 
   local size
   for size in 32 64 128; do

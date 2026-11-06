@@ -8,7 +8,10 @@ use tauri::{AppHandle, Manager};
 
 const SERVERS_FILE: &str = "servers.json";
 const SETTINGS_FILE: &str = "settings.json";
+const SESSION_FILE: &str = "session.json";
+const MAX_SESSION_TABS: usize = 50;
 const MAX_SAVED_SERVERS: usize = 500;
+const MAX_CATEGORY_CHARS: usize = 48;
 const MAX_APPEARANCES: usize = 100;
 pub(crate) const DEFAULT_APPEARANCE_ID: &str = "default";
 pub(crate) const DEFAULT_SSH_PORT: u16 = 22;
@@ -31,6 +34,9 @@ pub(crate) struct ServerProfile {
     /// Empty means "use the default appearance".
     #[serde(default)]
     pub appearance_id: String,
+    /// Sidebar group; empty means "no category".
+    #[serde(default)]
+    pub category: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -66,6 +72,15 @@ impl Appearance {
 pub(crate) struct AppSettings {
     pub sidebar_width: u16,
     pub sidebar_collapsed: bool,
+    /// Snippet panel on the right side of the window.
+    pub snippet_panel_open: bool,
+    pub snippet_panel_width: u16,
+    /// "single" or "double": clicks needed to open a server from the sidebar.
+    pub server_open_click: String,
+    /// "single" or "double": clicks needed to paste a snippet from the panel.
+    pub snippet_insert_click: String,
+    /// Reopen the tabs of the last run on start instead of an empty workspace.
+    pub restore_tabs: bool,
     pub copy_on_select: bool,
     pub confirm_multiline_paste: bool,
     /// Plain mouse drags select text even when a program (e.g. micro) uses the mouse.
@@ -89,6 +104,7 @@ pub(crate) struct AppSettings {
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
 const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
+const CLICK_MODES: [&str; 2] = ["single", "double"];
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 
 impl Default for AppSettings {
@@ -96,6 +112,11 @@ impl Default for AppSettings {
         Self {
             sidebar_width: 280,
             sidebar_collapsed: false,
+            snippet_panel_open: false,
+            snippet_panel_width: 280,
+            server_open_click: "single".to_string(),
+            snippet_insert_click: "single".to_string(),
+            restore_tabs: false,
             copy_on_select: false,
             confirm_multiline_paste: true,
             force_mouse_selection: false,
@@ -111,11 +132,56 @@ impl Default for AppSettings {
     }
 }
 
+/// One tab of the last run: a local shell or a saved server (by id, never connection details).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct SessionTab {
+    /// "local" or "ssh".
+    pub kind: String,
+    pub server_id: String,
+}
+
+/// Tabs that were open when Crabshell was last used (session.json).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct SessionState {
+    pub tabs: Vec<SessionTab>,
+    pub active_index: usize,
+}
+
+fn valid_session_tab(tab: &SessionTab) -> bool {
+    match tab.kind.as_str() {
+        "local" => tab.server_id.is_empty(),
+        "ssh" => !tab.server_id.is_empty() && tab.server_id.len() <= 128,
+        _ => false,
+    }
+}
+
+fn normalize_session(mut session: SessionState) -> SessionState {
+    session.tabs.retain(valid_session_tab);
+    session.tabs.truncate(MAX_SESSION_TABS);
+    if session.active_index >= session.tabs.len() {
+        session.active_index = 0;
+    }
+    session
+}
+
+pub(crate) fn save_session(app: &AppHandle, session: &SessionState) -> Result<(), String> {
+    if session.tabs.len() > MAX_SESSION_TABS {
+        return Err("Too many tabs to remember".to_string());
+    }
+    if !session.tabs.iter().all(valid_session_tab) {
+        return Err("Invalid tab in the session".to_string());
+    }
+    write_json(app, SESSION_FILE, &normalize_session(session.clone()))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppData {
     pub servers: Vec<ServerProfile>,
     pub settings: AppSettings,
+    pub session: SessionState,
     pub servers_file_exists: bool,
     pub settings_file_exists: bool,
 }
@@ -132,6 +198,9 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     if !(210..=420).contains(&settings.sidebar_width) {
         settings.sidebar_width = AppSettings::default().sidebar_width;
     }
+    if !(210..=420).contains(&settings.snippet_panel_width) {
+        settings.snippet_panel_width = AppSettings::default().snippet_panel_width;
+    }
     normalize_appearances(&mut settings);
     if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
         settings.theme_mode = AppSettings::default().theme_mode;
@@ -145,10 +214,23 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         settings.ui_scale = AppSettings::default().ui_scale;
     }
+    if !CLICK_MODES.contains(&settings.server_open_click.as_str()) {
+        settings.server_open_click = AppSettings::default().server_open_click;
+    }
+    if !CLICK_MODES.contains(&settings.snippet_insert_click.as_str()) {
+        settings.snippet_insert_click = AppSettings::default().snippet_insert_click;
+    }
+    // A missing or broken session file just means "nothing to restore".
+    let session = read_json::<SessionState>(&config_dir.join(SESSION_FILE))
+        .ok()
+        .flatten()
+        .map(normalize_session)
+        .unwrap_or_default();
 
     Ok(AppData {
         servers,
         settings,
+        session,
         servers_file_exists,
         settings_file_exists,
     })
@@ -163,6 +245,9 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
     if !(210..=420).contains(&settings.sidebar_width) {
         return Err("The sidebar width is outside the supported range".to_string());
     }
+    if !(210..=420).contains(&settings.snippet_panel_width) {
+        return Err("The snippet panel width is outside the supported range".to_string());
+    }
     if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
         return Err("Unknown color scheme".to_string());
     }
@@ -171,6 +256,11 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
     }
     if !CLIPBOARD_READ_MODES.contains(&settings.clipboard_read.as_str()) {
         return Err("Unknown clipboard access mode".to_string());
+    }
+    if !CLICK_MODES.contains(&settings.server_open_click.as_str())
+        || !CLICK_MODES.contains(&settings.snippet_insert_click.as_str())
+    {
+        return Err("Unknown click mode".to_string());
     }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         return Err("The UI scale is outside the supported range".to_string());
@@ -263,6 +353,8 @@ fn validate_servers(servers: &[ServerProfile]) -> Result<(), String> {
             || server.username.len() > 64
             || server.identity_file.len() > 4096
             || server.appearance_id.len() > 64
+            || server.category.chars().count() > MAX_CATEGORY_CHARS
+            || server.category.trim() != server.category
         {
             return Err("A saved server profile contains invalid fields".to_string());
         }
@@ -325,8 +417,9 @@ fn temporary_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_hex_color, normalize_appearances, temporary_path, validate_appearances,
-        validate_servers, AppSettings, Appearance, ServerProfile, DEFAULT_APPEARANCE_ID,
+        is_hex_color, normalize_appearances, normalize_session, temporary_path,
+        validate_appearances, validate_servers, AppSettings, Appearance, ServerProfile,
+        SessionState, SessionTab, DEFAULT_APPEARANCE_ID,
     };
     use std::path::Path;
 
@@ -335,6 +428,8 @@ mod tests {
         let settings = AppSettings::default();
         assert_eq!(settings.sidebar_width, 280);
         assert!(!settings.sidebar_collapsed);
+        assert!(!settings.snippet_panel_open);
+        assert_eq!(settings.snippet_panel_width, 280);
         assert!(!settings.copy_on_select);
         assert!(settings.confirm_multiline_paste);
         assert!(!settings.force_mouse_selection);
@@ -355,7 +450,27 @@ mod tests {
             username: String::new(),
             identity_file: String::new(),
             appearance_id: String::new(),
+            category: String::new(),
         };
+        assert!(validate_servers(&[profile]).is_err());
+    }
+
+    #[test]
+    fn validates_server_categories() {
+        let mut profile = ServerProfile {
+            id: "a".into(),
+            label: String::new(),
+            host: "h".into(),
+            port: 22,
+            username: String::new(),
+            identity_file: String::new(),
+            appearance_id: String::new(),
+            category: "Home lab".into(),
+        };
+        assert!(validate_servers(std::slice::from_ref(&profile)).is_ok());
+        profile.category = " padded ".into();
+        assert!(validate_servers(std::slice::from_ref(&profile)).is_err());
+        profile.category = "x".repeat(49);
         assert!(validate_servers(&[profile]).is_err());
     }
 
@@ -374,6 +489,7 @@ mod tests {
         )
         .unwrap();
         assert!(profile.appearance_id.is_empty());
+        assert!(profile.category.is_empty());
         assert_eq!(profile.port, 22);
     }
 
@@ -417,5 +533,36 @@ mod tests {
         assert!(!is_hex_color("#abc"));
         assert!(!is_hex_color("a0b1c2f"));
         assert!(!is_hex_color("#gg0000"));
+    }
+
+    #[test]
+    fn session_drops_invalid_tabs_and_clamps_active_index() {
+        let session: SessionState = serde_json::from_str(
+            r#"{"tabs":[{"kind":"local"},{"kind":"ssh","serverId":"a"},{"kind":"ssh"},{"kind":"telnet","serverId":"b"}],"activeIndex":7}"#,
+        )
+        .unwrap();
+        let session = normalize_session(session);
+        assert_eq!(
+            session.tabs,
+            vec![
+                SessionTab {
+                    kind: "local".into(),
+                    server_id: String::new()
+                },
+                SessionTab {
+                    kind: "ssh".into(),
+                    server_id: "a".into()
+                },
+            ]
+        );
+        assert_eq!(session.active_index, 0);
+    }
+
+    #[test]
+    fn click_modes_default_to_single_click() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(settings.server_open_click, "single");
+        assert_eq!(settings.snippet_insert_click, "single");
+        assert!(!settings.restore_tabs);
     }
 }

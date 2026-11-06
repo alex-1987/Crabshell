@@ -2,20 +2,23 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { defaultSettings } from "./appearance";
 import AboutDialog from "./AboutDialog";
+import BrandMark from "./BrandMark";
 import SettingsDialog from "./SettingsDialog";
 import SnippetEditor from "./SnippetEditor";
 import SnippetPicker from "./SnippetPicker";
 import SnippetSidebar from "./SnippetSidebar";
+import ServerList, { serverCategories } from "./ServerList";
+import FilterChips from "./FilterChips";
 import { deleteSnippet, listSnippets, saveSnippet, type Snippet } from "./snippets";
 import TerminalContextMenu from "./TerminalContextMenu";
 import TerminalPane from "./TerminalPane";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { terminalStore } from "./terminalStore";
-import type { AppSettings, SavedHost, SessionStatus, TerminalTab } from "./terminalTypes";
+import type { AppSettings, SavedHost, SessionState, SessionStatus, TerminalTab } from "./terminalTypes";
 import "./styles.css";
 
 const HOSTS_STORAGE_KEY = "crabshell.saved-hosts.v1";
@@ -34,6 +37,7 @@ function titleOf(tab: TerminalTab): string {
 type PersistentData = {
   servers: SavedHost[];
   settings: AppSettings;
+  session: SessionState;
   serversFileExists: boolean;
   settingsFileExists: boolean;
 };
@@ -50,6 +54,7 @@ function normalizeSavedHost(value: unknown): SavedHost | null {
     username: typeof saved.username === "string" ? saved.username : "",
     identityFile: typeof saved.identityFile === "string" ? saved.identityFile : "",
     appearanceId: typeof saved.appearanceId === "string" ? saved.appearanceId : "",
+    category: typeof saved.category === "string" ? saved.category.trim().slice(0, 48) : "",
   };
 }
 
@@ -90,6 +95,27 @@ function serverAddress(server: SavedHost): string {
   return `${server.username ? `${server.username}@` : ""}${server.host}${server.port && server.port !== 22 ? `:${server.port}` : ""}`;
 }
 
+/** Terminal width (CSS px) kept free before a second side panel is hidden. */
+const MIN_TERMINAL_WIDTH = 480;
+/** Below this window width the panels overlay the terminal (see styles.css); only one fits. */
+const OVERLAY_BREAKPOINT = 760;
+
+type Panel = "servers" | "snippets";
+
+/** Reopens the tabs of the last run; servers deleted in the meantime are skipped. */
+function restoreSession(session: SessionState, servers: SavedHost[]) {
+  const opened: string[] = [];
+  for (const tab of session.tabs) {
+    if (tab.kind === "local") opened.push(terminalStore.openLocalShell());
+    else {
+      const server = servers.find((item) => item.id === tab.serverId);
+      if (server) opened.push(terminalStore.openServer(server));
+    }
+  }
+  const active = opened[Math.min(session.activeIndex, opened.length - 1)];
+  if (active) terminalStore.activateTab(active);
+}
+
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
 }
@@ -110,9 +136,20 @@ export default function TabsApp() {
   const [username, setUsername] = useState("");
   const [identityFile, setIdentityFile] = useState("");
   const [appearanceId, setAppearanceId] = useState("");
+  const [category, setCategory] = useState("");
+  /** Sidebar filters: one server category / one snippet tag (lower case), null shows all. */
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [serverQuery, setServerQuery] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarNotice, setSidebarNotice] = useState("");
-  const [sidebarView, setSidebarView] = useState<"servers" | "snippets">("servers");
+  const [snippetPanelOpen, setSnippetPanelOpen] = useState(false);
+  const [snippetPanelWidth, setSnippetPanelWidth] = useState(280);
+  /** Which panel wins when both are open but the window is too narrow for both. */
+  const [lastOpenedPanel, setLastOpenedPanel] = useState<Panel>("servers");
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [sessionRestored, setSessionRestored] = useState(false);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [snippetsReady, setSnippetsReady] = useState(false);
   const [snippetError, setSnippetError] = useState("");
@@ -127,8 +164,10 @@ export default function TabsApp() {
   }, []);
   const sidebarWidthRef = useRef(sidebarWidth);
   const settingsRef = useRef<AppSettings>(defaultSettings);
-  const resizingSidebarRef = useRef(false);
+  const snippetPanelWidthRef = useRef(snippetPanelWidth);
+  const resizingRef = useRef<"servers" | "snippets" | null>(null);
   sidebarWidthRef.current = sidebarWidth;
+  snippetPanelWidthRef.current = snippetPanelWidth;
 
   const [systemLocale, setSystemLocale] = useState<string | null>(null);
   useEffect(() => {
@@ -142,6 +181,50 @@ export default function TabsApp() {
   const terminalSnapshot = useSyncExternalStore(terminalStore.subscribe, terminalStore.getSnapshot);
   const activeTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.activeTabId) ?? null;
   const canInsertSnippet = activeTab?.status === "connected";
+
+  // Tag chips for the snippet panel (tags compare case-insensitively, first spelling wins).
+  const tagChips = (() => {
+    const tags = new Map<string, { key: string; label: string; count: number }>();
+    for (const snippet of snippets) {
+      for (const tag of new Set(snippet.tags.map((item) => item.toLowerCase()))) {
+        const label = snippet.tags.find((item) => item.toLowerCase() === tag) ?? tag;
+        const entry = tags.get(tag) ?? { key: tag, label, count: 0 };
+        entry.count += 1;
+        tags.set(tag, entry);
+      }
+    }
+    return [...tags.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  })();
+  const activeTag = tagFilter !== null && tagChips.some((chip) => chip.key === tagFilter) ? tagFilter : null;
+  const visibleSnippets = activeTag === null ? snippets : snippets.filter((snippet) => snippet.tags.some((tag) => tag.toLowerCase() === activeTag));
+
+  // Both panels only stay open side by side when the terminal keeps enough room;
+  // otherwise the most recently opened one is shown (the other stays "open" and returns when it fits).
+  const zoom = appSettings.uiScale / 100;
+  const bothPanelsFit = viewportWidth >= OVERLAY_BREAKPOINT
+    && viewportWidth >= (sidebarWidth + snippetPanelWidth + 10 + MIN_TERMINAL_WIDTH) * zoom;
+  const bothOpen = !sidebarCollapsed && snippetPanelOpen;
+  const showServers = !sidebarCollapsed && (!bothOpen || bothPanelsFit || lastOpenedPanel === "servers");
+  const showSnippets = snippetPanelOpen && (!bothOpen || bothPanelsFit || lastOpenedPanel === "snippets");
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Remember open tabs (local shells and server ids, nothing else) for the next start.
+  const sessionTabs = terminalSnapshot.tabs.map((tab) => ({ kind: tab.kind, serverId: tab.kind === "ssh" ? tab.server?.id ?? "" : "" }));
+  const sessionKey = JSON.stringify([sessionTabs, terminalSnapshot.tabs.findIndex((tab) => tab.id === terminalSnapshot.activeTabId)]);
+  useEffect(() => {
+    if (!sessionRestored) return;
+    const [tabs, activeIndex] = JSON.parse(sessionKey) as [SessionState["tabs"], number];
+    const session: SessionState = appSettings.restoreTabs
+      ? { tabs: tabs.filter((tab) => tab.kind === "local" || tab.serverId), activeIndex: Math.max(0, activeIndex) }
+      : { tabs: [], activeIndex: 0 };
+    const timer = window.setTimeout(() => void invoke("save_session", { session }).catch(() => undefined), 300);
+    return () => window.clearTimeout(timer);
+  }, [sessionKey, sessionRestored, appSettings.restoreTabs]);
 
   useEffect(() => {
     let mounted = true;
@@ -176,8 +259,7 @@ export default function TabsApp() {
 
   function manageSnippets() {
     setPickerOpen(false);
-    setSidebarView("snippets");
-    if (sidebarCollapsed) toggleSidebar();
+    if (!showSnippets) toggleSnippetPanel();
   }
 
   async function storeSnippet(snippet: Snippet) {
@@ -219,8 +301,11 @@ export default function TabsApp() {
         setSavedHosts(nextServers);
         setSidebarWidth(nextSettings.sidebarWidth);
         setSidebarCollapsed(nextSettings.sidebarCollapsed);
+        setSnippetPanelOpen(nextSettings.snippetPanelOpen);
+        setSnippetPanelWidth(nextSettings.snippetPanelWidth);
         setAppSettings(nextSettings);
         sidebarWidthRef.current = nextSettings.sidebarWidth;
+        snippetPanelWidthRef.current = nextSettings.snippetPanelWidth;
         settingsRef.current = nextSettings;
         terminalStore.setClipboardPreferences(nextSettings);
         terminalStore.setAppearances(nextSettings.appearances, nextSettings.defaultAppearanceId, nextSettings.localAppearanceId);
@@ -229,6 +314,8 @@ export default function TabsApp() {
         localStorage.removeItem(SIDEBAR_WIDTH_KEY);
         localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
         setStorageError("");
+        if (nextSettings.restoreTabs) restoreSession(data.session, nextServers);
+        setSessionRestored(true);
       } catch (error) {
         if (mounted) setStorageError(t("notice.loadFailed", { error: translateBackend(error) }));
       } finally {
@@ -250,6 +337,8 @@ export default function TabsApp() {
     setUsername(server?.username ?? "");
     setIdentityFile(server?.identityFile ?? "");
     setAppearanceId(server?.appearanceId ?? "");
+    // A new server starts in the category that is currently filtered.
+    setCategory(server ? server.category : categoryFilter && categoryFilter.trim() ? categoryFilter : "");
     setSidebarNotice("");
     setEditorOpen(true);
   }
@@ -268,6 +357,10 @@ export default function TabsApp() {
       return;
     }
 
+    // Reuse the spelling of an existing category ("homelab" → "HomeLab").
+    const typedCategory = category.trim().slice(0, 48);
+    const savedCategory = serverCategories(savedHosts).find((item) => item.localeCompare(typedCategory, undefined, { sensitivity: "base" }) === 0) ?? typedCategory;
+
     const server: SavedHost = {
       id: editingId ?? crypto.randomUUID(),
       label: label.trim(),
@@ -277,6 +370,7 @@ export default function TabsApp() {
       identityFile,
       // The design may have been deleted while this dialog was open.
       appearanceId: appSettings.appearances.some((item) => item.id === appearanceId) ? appearanceId : "",
+      category: savedCategory,
     };
     const nextServers = editingId
       ? savedHosts.map((saved) => saved.id === editingId ? server : saved)
@@ -326,7 +420,7 @@ export default function TabsApp() {
   }
 
   function applySettings(settings: AppSettings): AppSettings {
-    const normalized = { ...settings, sidebarWidth: Math.round(settings.sidebarWidth) };
+    const normalized = { ...settings, sidebarWidth: Math.round(settings.sidebarWidth), snippetPanelWidth: Math.round(settings.snippetPanelWidth) };
     settingsRef.current = normalized;
     setAppSettings(normalized);
     terminalStore.setClipboardPreferences(normalized);
@@ -342,8 +436,9 @@ export default function TabsApp() {
   }
 
   async function saveSettingsDialog(settings: AppSettings) {
-    // Keep sidebar state from the live settings; the dialog does not edit it.
-    const next = { ...settings, sidebarWidth: settingsRef.current.sidebarWidth, sidebarCollapsed: settingsRef.current.sidebarCollapsed };
+    // Keep panel layout from the live settings; the dialog does not edit it.
+    const live = settingsRef.current;
+    const next = { ...settings, sidebarWidth: live.sidebarWidth, sidebarCollapsed: live.sidebarCollapsed, snippetPanelOpen: live.snippetPanelOpen, snippetPanelWidth: live.snippetPanelWidth };
     await invoke("save_settings", { settings: next });
     applySettings(next);
 
@@ -360,133 +455,168 @@ export default function TabsApp() {
 
   function toggleSidebar() {
     if (!storageReady || storageError) return;
+    // Open but pushed aside by the snippet panel (narrow window): bring it to the front.
+    if (!sidebarCollapsed && !showServers) {
+      setLastOpenedPanel("servers");
+      return;
+    }
     const collapsed = !sidebarCollapsed;
     setSidebarCollapsed(collapsed);
+    if (!collapsed) setLastOpenedPanel("servers");
     persistSettings({ ...settingsRef.current, sidebarCollapsed: collapsed });
   }
 
-  function setResizedSidebarWidth(width: number) {
-    const nextWidth = Math.round(Math.min(420, Math.max(210, width)));
-    sidebarWidthRef.current = nextWidth;
-    setSidebarWidth(nextWidth);
+  function toggleSnippetPanel() {
+    if (!storageReady || storageError) return;
+    if (snippetPanelOpen && !showSnippets) {
+      setLastOpenedPanel("snippets");
+      return;
+    }
+    const open = !snippetPanelOpen;
+    setSnippetPanelOpen(open);
+    if (open) setLastOpenedPanel("snippets");
+    persistSettings({ ...settingsRef.current, snippetPanelOpen: open });
+    if (!open) terminalStore.focusActiveTerminal();
   }
 
-  function handleSidebarResizeKey(event: KeyboardEvent<HTMLDivElement>) {
+  function clampPanelWidth(width: number) {
+    return Math.round(Math.min(420, Math.max(210, width)));
+  }
+
+  function setPanelWidth(panel: "servers" | "snippets", width: number) {
+    const next = clampPanelWidth(width);
+    if (panel === "servers") {
+      sidebarWidthRef.current = next;
+      setSidebarWidth(next);
+    } else {
+      snippetPanelWidthRef.current = next;
+      setSnippetPanelWidth(next);
+    }
+  }
+
+  function persistPanelWidths() {
+    persistSettings({ ...settingsRef.current, sidebarWidth: sidebarWidthRef.current, snippetPanelWidth: snippetPanelWidthRef.current });
+  }
+
+  function handleResizeKey(panel: "servers" | "snippets", event: KeyboardEvent<HTMLDivElement>) {
     if (!storageReady || storageError || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
     event.preventDefault();
-    const nextWidth = sidebarWidth + (event.key === "ArrowLeft" ? -16 : 16);
-    setResizedSidebarWidth(nextWidth);
-    persistSettings({ ...settingsRef.current, sidebarWidth: Math.round(nextWidth) });
+    // The snippet panel sits on the right, so dragging left makes it wider.
+    const grow = (event.key === "ArrowRight") === (panel === "servers");
+    const current = panel === "servers" ? sidebarWidthRef.current : snippetPanelWidthRef.current;
+    setPanelWidth(panel, current + (grow ? 16 : -16));
+    persistPanelWidths();
   }
 
-  const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties;
+  function finishResize() {
+    if (!resizingRef.current) return;
+    resizingRef.current = null;
+    persistPanelWidths();
+  }
+
+  function resizerProps(panel: "servers" | "snippets") {
+    return {
+      "aria-controls": panel === "servers" ? "server-sidebar" : "snippet-panel",
+      "aria-label": panel === "servers" ? t("sidebar.resize") : t("snippetPanel.resize"),
+      "aria-orientation": "vertical" as const,
+      "aria-valuemax": 420,
+      "aria-valuemin": 210,
+      "aria-valuenow": panel === "servers" ? sidebarWidth : snippetPanelWidth,
+      className: "sidebar-resizer",
+      onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => handleResizeKey(panel, event),
+      onLostPointerCapture: finishResize,
+      onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
+        if (!storageReady || storageError) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        resizingRef.current = panel;
+        event.preventDefault();
+      },
+      onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
+        if (resizingRef.current === "servers") setPanelWidth("servers", event.clientX);
+        else if (resizingRef.current === "snippets") setPanelWidth("snippets", window.innerWidth - event.clientX);
+      },
+      onPointerUp: finishResize,
+      role: "separator",
+      tabIndex: 0,
+    };
+  }
+
+  const shellColumns = [
+    ...(showServers ? ["var(--sidebar-col)", "5px"] : []),
+    "minmax(0, 1fr)",
+    ...(showSnippets ? ["5px", "var(--snippet-col)"] : []),
+  ].join(" ");
+  const shellStyle = {
+    "--sidebar-width": `${sidebarWidth}px`,
+    "--snippet-panel-width": `${snippetPanelWidth}px`,
+    "--shell-columns": shellColumns,
+  } as CSSProperties;
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`} style={shellStyle}>
-      {!sidebarCollapsed && (
+    <div className={`app-shell${showServers ? "" : " sidebar-collapsed"}${showSnippets ? " snippet-panel-open" : ""}`} style={shellStyle}>
+      {showServers && (
         <>
           <aside className="sidebar" id="server-sidebar">
             <div className="sidebar-brand-row">
               <div className="brand-row">
-                <div className="brand-mark" aria-hidden="true"><span /></div>
+                <BrandMark />
                 <div><div className="brand-name">crabshell</div><div className="brand-caption">LOCAL SSH WORKSPACE</div></div>
               </div>
               <button aria-label={t("sidebar.hide")} className="icon-button sidebar-toggle" disabled={!storageReady} onClick={toggleSidebar} title={t("sidebar.hide")} type="button"><span aria-hidden="true">‹</span></button>
             </div>
             <div className="privacy-line"><span className="privacy-indicator" /><span>{t("sidebar.privacy")}</span></div>
-            <div aria-label={t("sidebar.views")} className="sidebar-views" role="tablist">
-              <button aria-selected={sidebarView === "servers"} className="settings-section-tab" onClick={() => setSidebarView("servers")} role="tab" type="button">{t("sidebar.servers")} <span>{savedHosts.length}</span></button>
-              <button aria-selected={sidebarView === "snippets"} className="settings-section-tab" onClick={() => setSidebarView("snippets")} role="tab" type="button">{t("sidebar.snippets")} <span>{snippets.length}</span></button>
+            <div className="server-list-heading">
+              <div><h1>{t("sidebar.servers")}</h1><span>{savedHosts.length}</span></div>
+              <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!storageReady || Boolean(storageError)} onClick={() => openEditor()} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
             </div>
-            {sidebarView === "servers" ? (
-              <>
-                <div className="server-list-heading">
-                  <div><h1>{t("sidebar.servers")}</h1><span>{savedHosts.length}</span></div>
-                  <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!storageReady || Boolean(storageError)} onClick={() => openEditor()} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
-                </div>
-                {sidebarNotice && <div aria-live="polite" className="page-notice">{sidebarNotice}</div>}
-                <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
-                  {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : savedHosts.map((server) => (
-                    <div className="saved-server" key={server.id}>
-                      <button className="saved-server-main" disabled={!storageReady || Boolean(storageError)} onClick={() => openServer(server)} title={serverAddress(server)} type="button">
-                        <span className="saved-server-name">{server.label || server.host}</span>
-                        <span className="saved-server-host">{serverAddress(server)}</span>
-                        {server.identityFile && <span className="saved-server-key">{t("sidebar.key", { file: fileName(server.identityFile) })}</span>}
-                      </button>
-                      {confirmDeleteId === server.id ? (
-                        <div className="sidebar-delete-confirm" role="group" aria-label={t("sidebar.removeGroup", { name: server.label || server.host })}>
-                          <button className="text-action" onClick={() => setConfirmDeleteId(null)} type="button">{t("common.cancel")}</button>
-                          <button className="text-action text-danger" onClick={() => void removeHost(server.id)} type="button">{t("sidebar.remove")}</button>
-                        </div>
-                      ) : (
-                        <div className="saved-server-actions">
-                          <button aria-label={t("sidebar.editServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => openEditor(server)} title={t("sidebar.edit")} type="button"><span aria-hidden="true">✎</span></button>
-                          <button aria-label={t("sidebar.deleteServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => setConfirmDeleteId(server.id)} title={t("sidebar.delete")} type="button"><span aria-hidden="true">×</span></button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </nav>
-              </>
-            ) : (
-              <>
-                <div className="server-list-heading">
-                  <div><h1>{t("sidebar.snippets")}</h1><span>{snippets.length}</span></div>
-                  <button aria-label={t("snippets.add")} className="icon-button add-server-button" disabled={!snippetsReady || Boolean(snippetError)} onClick={() => { setSnippetNotice(""); setEditingSnippet({ id: "", name: "", text: "", tags: [] }); }} title={t("snippets.add")} type="button"><span aria-hidden="true">+</span></button>
-                </div>
-                {snippetNotice && <div aria-live="polite" className="page-notice">{snippetNotice}</div>}
-                <nav aria-label={t("snippets.saved")} className="saved-server-list">
-                  {!snippetsReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : snippetError ? <div aria-live="polite" className="sidebar-storage-error">{snippetError}</div> : (
-                    <SnippetSidebar
-                      canInsert={canInsertSnippet}
-                      disabled={!snippetsReady}
-                      onDelete={removeSnippet}
-                      onDuplicate={duplicateSnippet}
-                      onEdit={(snippet) => { setSnippetNotice(""); setEditingSnippet(snippet); }}
-                      onInsert={(snippet, execute) => insertSnippet(snippet, execute)}
-                      snippets={snippets}
-                    />
-                  )}
-                </nav>
-                <div className="snippet-sidebar-hint">{t("snippets.noPasswords")}</div>
-              </>
+            {sidebarNotice && <div aria-live="polite" className="page-notice">{sidebarNotice}</div>}
+            {storageReady && !storageError && savedHosts.length > 0 && (
+              <div className="sidebar-search">
+                <span aria-hidden="true" className="sidebar-search-icon">⌕</span>
+                <input
+                  aria-label={t("sidebar.search")}
+                  autoComplete="off"
+                  onChange={(event) => setServerQuery(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Escape" && serverQuery) { event.preventDefault(); event.stopPropagation(); setServerQuery(""); } }}
+                  placeholder={t("sidebar.search")}
+                  spellCheck={false}
+                  type="search"
+                  value={serverQuery}
+                />
+                {serverQuery && <button aria-label={t("sidebar.clearSearch")} className="sidebar-search-clear" onClick={() => setServerQuery("")} title={t("sidebar.clearSearch")} type="button">×</button>}
+              </div>
             )}
+            <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
+              {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : (
+                <ServerList
+                  activeCategory={categoryFilter}
+                  address={serverAddress}
+                  collapsed={collapsedGroups}
+                  confirmDeleteId={confirmDeleteId}
+                  disabled={!storageReady || Boolean(storageError)}
+                  doubleClick={appSettings.serverOpenClick === "double"}
+                  keyName={fileName}
+                  onCategory={setCategoryFilter}
+                  onConfirmDelete={setConfirmDeleteId}
+                  onEdit={openEditor}
+                  onOpen={openServer}
+                  onRemove={(id) => void removeHost(id)}
+                  query={serverQuery}
+                  onToggleGroup={(key) => setCollapsedGroups((current) => {
+                    const next = new Set(current);
+                    if (!next.delete(key)) next.add(key);
+                    return next;
+                  })}
+                  servers={savedHosts}
+                />
+              )}
+            </nav>
             <div className="sidebar-bottom">
               <div className="open-ssh-badge"><span>SSH</span><div><strong>OpenSSH</strong><small>{t("sidebar.systemInstall")}</small></div></div>
               <div className="sidebar-meta">{t("sidebar.meta")}</div>
             </div>
           </aside>
-          <div
-            aria-controls="server-sidebar"
-            aria-label={t("sidebar.resize")}
-            aria-orientation="vertical"
-            aria-valuemax={420}
-            aria-valuemin={210}
-            aria-valuenow={sidebarWidth}
-            className="sidebar-resizer"
-            onKeyDown={handleSidebarResizeKey}
-            onLostPointerCapture={() => {
-              if (resizingSidebarRef.current) {
-                resizingSidebarRef.current = false;
-                persistSettings({ ...settingsRef.current, sidebarWidth: sidebarWidthRef.current });
-              }
-            }}
-            onPointerDown={(event) => {
-              if (!storageReady || storageError) return;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              resizingSidebarRef.current = true;
-              event.preventDefault();
-            }}
-            onPointerMove={(event) => { if (resizingSidebarRef.current) setResizedSidebarWidth(event.clientX); }}
-            onPointerUp={() => {
-              if (resizingSidebarRef.current) {
-                resizingSidebarRef.current = false;
-                persistSettings({ ...settingsRef.current, sidebarWidth: sidebarWidthRef.current });
-              }
-            }}
-            role="separator"
-            tabIndex={0}
-          />
+          <div {...resizerProps("servers")} />
           <button aria-label={t("sidebar.close")} className="sidebar-backdrop" onClick={toggleSidebar} tabIndex={-1} type="button" />
         </>
       )}
@@ -494,7 +624,7 @@ export default function TabsApp() {
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-left">
-            {sidebarCollapsed && <button aria-label={t("sidebar.show")} className="icon-button show-sidebar-button" disabled={!storageReady} onClick={toggleSidebar} title={t("sidebar.show")} type="button"><span aria-hidden="true">☰</span></button>}
+            <button aria-label={showServers ? t("sidebar.hide") : t("sidebar.show")} aria-controls="server-sidebar" aria-pressed={showServers} className="panel-toggle" disabled={!storageReady || Boolean(storageError)} onClick={toggleSidebar} title={showServers ? t("sidebar.hide") : t("sidebar.show")} type="button"><span aria-hidden="true">☰</span><span className="panel-toggle-label">{t("sidebar.servers")}</span></button>
             <div className="breadcrumb"><span>CRABSHELL</span><i>/</i><strong>{t("topbar.terminal")}</strong></div>
           </div>
           <div className="topbar-actions">
@@ -504,7 +634,7 @@ export default function TabsApp() {
               <button className="connect-button" onClick={() => void terminalStore.connect(activeTab.id)} type="button">{activeTab.kind === "local" ? t("topbar.restart") : t("topbar.reconnect")} <span aria-hidden="true">↻</span></button>
             )}
             <button className="disconnect-button" disabled={!activeTab || (activeTab.status !== "connected" && activeTab.status !== "connecting")} onClick={() => activeTab && void terminalStore.disconnect(activeTab.id)} type="button"><span aria-hidden="true">■</span> {activeTab?.kind === "local" ? t("topbar.stop") : t("topbar.disconnect")}</button>
-            <button aria-label={t("snippets.openPicker")} className="icon-button settings-button" onClick={() => setPickerOpen(true)} title={t("snippets.openPicker")} type="button"><span aria-hidden="true">{"{}"}</span></button>
+            <button aria-controls="snippet-panel" aria-label={showSnippets ? t("snippetPanel.hide") : t("snippetPanel.show")} aria-pressed={showSnippets} className="panel-toggle" disabled={!storageReady || Boolean(storageError)} onClick={toggleSnippetPanel} title={showSnippets ? t("snippetPanel.hide") : t("snippetPanel.show")} type="button"><span aria-hidden="true">{"{}"}</span><span className="panel-toggle-label">{t("sidebar.snippets")}</span></button>
             <button
               aria-label={t("topbar.themeToggle", { mode: themeModeLabel(appSettings.themeMode) })}
               className="icon-button settings-button theme-toggle"
@@ -566,6 +696,44 @@ export default function TabsApp() {
         </footer>
       </main>
 
+      {showSnippets && (
+        <>
+          <div {...resizerProps("snippets")} />
+          <aside aria-label={t("sidebar.snippets")} className="sidebar snippet-panel" id="snippet-panel">
+            <div className="snippet-panel-top">
+              <button aria-label={t("snippetPanel.hide")} className="icon-button sidebar-toggle" onClick={toggleSnippetPanel} title={t("snippetPanel.hide")} type="button"><span aria-hidden="true">›</span></button>
+            </div>
+            <div className="server-list-heading">
+              <div><h1>{t("sidebar.snippets")}</h1><span>{snippets.length}</span></div>
+              <div className="snippet-panel-actions">
+                <button aria-label={t("snippets.openPicker")} className="icon-button add-server-button" onClick={() => setPickerOpen(true)} title={t("snippets.openPicker")} type="button"><span aria-hidden="true">⌕</span></button>
+                <button aria-label={t("snippets.add")} className="icon-button add-server-button" disabled={!snippetsReady || Boolean(snippetError)} onClick={() => { setSnippetNotice(""); setEditingSnippet({ id: "", name: "", text: "", tags: [] }); }} title={t("snippets.add")} type="button"><span aria-hidden="true">+</span></button>
+              </div>
+            </div>
+            {snippetNotice && <div aria-live="polite" className="page-notice">{snippetNotice}</div>}
+            {snippetsReady && !snippetError && <FilterChips active={activeTag} chips={tagChips} label={t("snippets.tagFilter")} onChange={setTagFilter} />}
+            <nav aria-label={t("snippets.saved")} className="saved-server-list">
+              {!snippetsReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : snippetError ? <div aria-live="polite" className="sidebar-storage-error">{snippetError}</div> : (
+                <SnippetSidebar
+                  canInsert={canInsertSnippet}
+                  disabled={!snippetsReady}
+                  doubleClick={appSettings.snippetInsertClick === "double"}
+                  onDelete={removeSnippet}
+                  onDuplicate={duplicateSnippet}
+                  onEdit={(snippet) => { setSnippetNotice(""); setEditingSnippet(snippet); }}
+                  onInsert={(snippet, execute) => insertSnippet(snippet, execute)}
+                  activeTag={activeTag}
+                  onTag={setTagFilter}
+                  snippets={visibleSnippets}
+                />
+              )}
+            </nav>
+            <div className="snippet-sidebar-hint">{t("snippets.noPasswords")}</div>
+          </aside>
+          <button aria-label={t("snippetPanel.hide")} className="sidebar-backdrop snippet-panel-backdrop" onClick={toggleSnippetPanel} tabIndex={-1} type="button" />
+        </>
+      )}
+
       {terminalSnapshot.pendingPaste && (() => {
         const { text, source, execute } = terminalSnapshot.pendingPaste;
         const lines = text.split(/\r\n|\r|\n/);
@@ -602,6 +770,9 @@ export default function TabsApp() {
             <form className="editor-form" onSubmit={saveHost}>
               <label className="field-label" htmlFor="label">{t("server.label")} <span>{t("server.optional")}</span></label>
               <input autoComplete="off" autoFocus id="label" name="label" onChange={(event) => setLabel(event.target.value)} placeholder={t("server.labelPlaceholder")} value={label} />
+              <label className="field-label" htmlFor="category">{t("server.category")} <span>{t("server.optional")}</span></label>
+              <input autoComplete="off" id="category" list="server-categories" maxLength={48} name="category" onChange={(event) => setCategory(event.target.value)} placeholder={t("server.categoryPlaceholder")} value={category} />
+              <datalist id="server-categories">{serverCategories(savedHosts).map((item) => <option key={item} value={item} />)}</datalist>
               <label className="field-label" htmlFor="host">{t("server.host")} <span>{t("server.portLabel")}</span></label>
               <div className="host-port-row">
                 <input autoComplete="off" id="host" name="host" onChange={(event) => setHost(event.target.value)} placeholder={t("server.hostPlaceholder")} spellCheck={false} value={host} required />

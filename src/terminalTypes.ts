@@ -8,6 +8,8 @@ export type SavedHost = {
   identityFile: string;
   /** Empty string means the default appearance. */
   appearanceId: string;
+  /** Sidebar group; empty string means no category. */
+  category: string;
 };
 
 export type Appearance = {
@@ -25,10 +27,23 @@ import type { LanguageSetting } from "./i18n";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ClipboardReadMode = "ask" | "always" | "never";
+/** Clicks needed to open a server or paste a snippet from the side panels. */
+export type ClickMode = "single" | "double";
+
+/** One tab of the last run (session.json); servers are referenced by id only. */
+export type SessionTab = { kind: TabKind; serverId: string };
+export type SessionState = { tabs: SessionTab[]; activeIndex: number };
 
 export type AppSettings = {
   sidebarWidth: number;
   sidebarCollapsed: boolean;
+  /** Snippet panel on the right side of the window. */
+  snippetPanelOpen: boolean;
+  snippetPanelWidth: number;
+  serverOpenClick: ClickMode;
+  snippetInsertClick: ClickMode;
+  /** Reopen the tabs of the last run on start instead of an empty workspace. */
+  restoreTabs: boolean;
   copyOnSelect: boolean;
   confirmMultilinePaste: boolean;
   /** Plain mouse drags select text even when a program (e.g. micro) uses the mouse. */

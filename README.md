@@ -1,34 +1,215 @@
+<div align="center">
+
+<img src="src-tauri/icons/icon.png" alt="Crabshell logo" width="112" height="112">
+
 # Crabshell
 
-Local SSH manager and terminal for the desktop, built with Tauri 2, Rust and xterm.js. Crabshell uses the installed OpenSSH client; keys, ssh-agent, `known_hosts` and `~/.ssh/config` stay on your device.
+**A local SSH manager and terminal for the Linux desktop.**<br>
+Tabs, saved servers, snippets and a clipboard that also works over SSH, built on the OpenSSH client you already have.
+
+[![Latest release](https://img.shields.io/github/v/release/alex-1987/Crabshell?label=release&color=c7e77a&labelColor=1d211c)](https://github.com/alex-1987/Crabshell/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/alex-1987/Crabshell/total?color=c7e77a&labelColor=1d211c)](https://github.com/alex-1987/Crabshell/releases)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-c7e77a?labelColor=1d211c)](#license)
+[![Platform: Linux](https://img.shields.io/badge/platform-Linux%20x86__64%20%7C%20arm64-c7e77a?labelColor=1d211c)](#installation)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-e98a70?labelColor=1d211c)](https://github.com/sponsors/alex-1987)
+
+[**Download**](https://github.com/alex-1987/Crabshell/releases/latest) · [Installation](#installation) · [Features](#features) · [micro over SSH](#micro-over-ssh) · [Support the project](#support-the-project)
+
+</div>
+
+---
+
+## Why Crabshell?
+
+- 🔒 **Everything stays on your device.** No cloud, no account, no telemetry. Crabshell runs your system `ssh`, so your keys, `ssh-agent`, `known_hosts` and `~/.ssh/config` just keep working. The app never reads or copies private keys.
+- 🗂️ **Your servers, one click away.** Save hosts with a label, user, port, key and their own color scheme, and open each one in its own tab.
+- 🧩 **Snippets for the commands you keep typing.** Search with `Ctrl+Shift+S` and paste into the active terminal. Nothing is ever sent without you pressing Enter, or `Ctrl+Enter` to paste and run.
+- 📋 **Copy and paste that works over SSH.** Supports OSC 52, so micro, vim/Neovim and tmux on the server can use your local clipboard.
+- 🎨 **Fits your desktop.** Light, dark or system theme, per-server designs, adjustable UI size, English and German.
+
+> [!NOTE]
+> **Crabshell is vibe-coded.** It was built largely through conversations with an AI coding assistant ([Claude Code](https://claude.com/claude-code)): I describe the features, test them, and decide what goes in. The code is checked with type checks, `clippy` and unit tests, but it has not had an independent security review. It is a hobby project, provided as is. Please read the code before trusting it with anything critical, and [open an issue](https://github.com/alex-1987/Crabshell/issues) if you find a problem.
+
+## Installation
+
+Crabshell needs the **OpenSSH client** (`ssh`). It is installed on almost every Linux system already, and the `.deb`, `.rpm` and Arch packages pull it in automatically.
+
+### Which file do I need?
+
+All files are on the [**latest release page**](https://github.com/alex-1987/Crabshell/releases/latest). Not sure which processor you have? Run `uname -m`: `x86_64` means Intel/AMD, `aarch64` means ARM (arm64).
+
+| Your system | Intel/AMD (x86_64) | ARM (aarch64 / arm64) |
+| --- | --- | --- |
+| **Debian, Ubuntu, Linux Mint, Pop!_OS, elementary, Zorin** | `Crabshell_<version>_amd64.deb` | `Crabshell_<version>_arm64.deb` |
+| **Fedora, openSUSE, RHEL/Alma/Rocky** | `Crabshell-<version>-1.x86_64.rpm` | `Crabshell-<version>-1.aarch64.rpm` |
+| **Arch Linux, CachyOS, EndeavourOS, Manjaro, Garuda** | `crabshell-<version>-1-x86_64.pkg.tar.zst` | build it yourself ([see below](#building-it-yourself)) |
+| **Anything else** | `Crabshell_<version>_amd64.AppImage` | `Crabshell_<version>_aarch64.AppImage` |
+
+The `.deb` and `.rpm` packages need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later). The Arch package is built against current Arch Linux.
+
+### Quick install from the terminal
+
+Each block below downloads the latest release and installs it. You can paste a block as a whole. The first line asks GitHub for the newest version number.
+
+<details open>
+<summary><b>Debian, Ubuntu, Linux Mint, Pop!_OS</b> (.deb)</summary>
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
+ARCH=$(dpkg --print-architecture)    # amd64 or arm64
+curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell_${VERSION}_${ARCH}.deb"
+sudo apt install "./Crabshell_${VERSION}_${ARCH}.deb"
+```
+
+The `./` in front of the file name matters: without it, `apt` searches its online repositories instead.
+
+</details>
+
+<details>
+<summary><b>Fedora, RHEL, AlmaLinux, Rocky Linux</b> (.rpm)</summary>
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
+curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell-${VERSION}-1.$(uname -m).rpm"
+sudo dnf install "./Crabshell-${VERSION}-1.$(uname -m).rpm"
+```
+
+</details>
+
+<details>
+<summary><b>openSUSE</b> (.rpm)</summary>
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
+curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell-${VERSION}-1.$(uname -m).rpm"
+sudo zypper install --allow-unsigned-rpm "./Crabshell-${VERSION}-1.$(uname -m).rpm"
+```
+
+The package is not signed with a GPG key, so `zypper` needs `--allow-unsigned-rpm`.
+
+</details>
+
+<details>
+<summary><b>Arch Linux, CachyOS, EndeavourOS, Manjaro, Garuda</b> (.pkg.tar.zst)</summary>
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
+sudo pacman -U "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/crabshell-${VERSION}-1-x86_64.pkg.tar.zst"
+```
+
+`pacman` downloads the file itself. The prebuilt package is for x86_64 only. On ARM, [build it with `makepkg`](#3a-arch-based-distributions-build-a-pacman-package).
+
+</details>
+
+<details>
+<summary><b>Any other distribution</b> (AppImage, no installation)</summary>
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
+case "$(uname -m)" in x86_64) ARCH=amd64 ;; aarch64) ARCH=aarch64 ;; esac
+curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell_${VERSION}_${ARCH}.AppImage"
+chmod +x "Crabshell_${VERSION}_${ARCH}.AppImage"
+"./Crabshell_${VERSION}_${ARCH}.AppImage"
+```
+
+An AppImage is a single file you can put anywhere, for example in `~/Applications`. To get Crabshell into your application menu and the proper icon in the taskbar, open **⚙ Settings → Application menu and taskbar → Add to application menu** once (only shown when running the AppImage). If it refuses to start with a FUSE error, install `libfuse2` (`fuse2` on Arch, `fuse-libs` on Fedora), or run it with `--appimage-extract-and-run`.
+
+</details>
+
+### Install by clicking
+
+1. Open the [latest release](https://github.com/alex-1987/Crabshell/releases/latest) and download the file for your system from **Assets** (see the table above).
+2. **.deb / .rpm:** double-click the file. Your software center (GNOME Software, KDE Discover, ...) offers to install it.
+   **AppImage:** right-click → *Properties* → *Permissions*, enable *Allow executing file as program*, then double-click it.
+3. Start **Crabshell** from your application menu.
+
+### Check the download (optional)
+
+GitHub shows a `sha256:` checksum next to every file on the release page. Compare it with your download:
+
+```bash
+sha256sum Crabshell_*_amd64.deb     # use the name of the file you downloaded
+```
+
+If both values are identical, the file arrived unchanged.
+
+### First steps
+
+1. Click **+** in the server list on the left and enter the host (or an alias from `~/.ssh/config`). User, port and key are optional.
+2. Click the server to open it in a new tab. On the first connection, OpenSSH asks you to confirm the server's host key in the terminal. Only accept it after you have checked the fingerprint.
+3. Open **{} Snippets** in the top bar to save commands you use often, and press `Ctrl+Shift+S` to search and paste them.
+4. Use **⚙** to set the language, theme, click behavior, clipboard options and whether the last tabs reopen on start.
+
+### Updating and uninstalling
+
+To **update**, install the newer package the same way. Your servers, snippets and settings stay where they are.
+
+| | Uninstall |
+| --- | --- |
+| Debian, Ubuntu, ... | `sudo apt remove crabshell` |
+| Fedora, RHEL, ... | `sudo dnf remove crabshell` |
+| openSUSE | `sudo zypper remove crabshell` |
+| Arch, CachyOS, ... | `sudo pacman -R crabshell` |
+| AppImage | delete the file |
+
+Your data is not removed with the app. To delete it as well, remove `~/.config/dev.crabshell.app/`.
 
 ## Features
 
-Crabshell supports multiple locally saved server profiles and multiple terminal tabs, each with its own SSH session or local shell:
+### Servers and sessions
+- Saved server profiles with label, category, host or `~/.ssh/config` alias, user, port (default 22) and private key. Port 22 is not passed to `ssh`, so a `Port` from `~/.ssh/config` still applies to aliases.
+- Categories group the server list (collapsible). Click a category chip above the list to show only those servers; click it again to show all.
+- Every tab has its own SSH session or local shell. Tabs can be reconnected and closed, and you can switch with `Ctrl+Tab`.
+- Local shell via `+` or `Ctrl+Shift+T`: your login shell (`$SHELL`) in your home directory.
+- Optionally reopen the tabs from last time on start, or always start with an empty workspace.
+- OpenSSH runs in a real PTY: full-screen programs, colors and resizing work as in any terminal. Sessions are cleaned up when the window closes.
 
-- Server list with adding, editing and removing profiles
-- Terminal tabs with independent sessions, reconnect and tab closing
-- Local shell via `+` or `Ctrl+Shift+T`: starts the user's login shell (`$SHELL`) in the home directory, with its own selectable design
-- English and German UI; follows the system locale by default (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`) and can be set in the settings
-- Light, dark or automatic (system) color scheme, toggled next to the gear icon; adjustable interface text size (80–150 %)
-- Designs per server profile: text and background color, cursor, selection, tab color and font size, managed via the gear icon in the top right
-- Clipboard: `Ctrl+Shift+C` copy, `Ctrl+Shift+V` paste, optional copy on select and confirmation for multiline paste (also applies to the context menu and middle click)
-- Own right-click menu (copy, paste, select all, snippets) that also works in programs that take over the mouse, such as micro, htop or mc. There, `Shift`+drag selects text; an optional setting lets plain dragging select as well (those programs then no longer receive left clicks)
-- OSC 52 clipboard support: programs such as micro, vim/Neovim or tmux can copy into the local clipboard, also over SSH. Reading the clipboard (e.g. Ctrl+V in micro) asks first and can be allowed per session; see [micro over SSH](#micro-over-ssh)
-- Snippets: saved commands with name and tags, managed in the sidebar (new, edit, duplicate, delete) and inserted via a search picker (`Ctrl+Shift+S`). A snippet is only pasted into the active, connected terminal, never sent on its own; `Ctrl+Enter` (or ▶) pastes and runs it. Trailing line breaks are removed, and multiline snippets always show a preview to confirm. Snippets are stored unencrypted in `snippets.json`, so do not put passwords in them.
-- Shortcuts: `Ctrl+Shift+S` snippets, `Ctrl+Shift+T` local shell, `Ctrl+Shift+W` close, `Ctrl+Tab` switch
-- Host or SSH config alias, port (default 22) and optional user per profile; port 22 is not passed to `ssh`, so a `Port` from `~/.ssh/config` still applies to aliases
-- Optional label and private key selection
-- Server profiles in `servers.json`, UI settings in `settings.json` and snippets in `snippets.json` in the app-specific Tauri config directory (`~/.config/dev.crabshell.app/`); files are written atomically, and an unreadable `snippets.json` is moved aside to `snippets.json.broken` instead of breaking the app
-- OpenSSH in a PTY with raw terminal input and output
-- Terminal resize, colors, disconnect and status messages
-- SSH sessions are cleaned up when the window closes
+### Snippets
+- Saved commands with name and tags, in their own panel on the right: new, edit, duplicate, delete.
+- Click a tag (in the chip row or on a snippet) to show only snippets with that tag.
+- Search picker on `Ctrl+Shift+S`. `Enter` pastes, `Ctrl+Enter` (or ▶) pastes and runs.
+- A snippet is only pasted into the active, connected terminal and never sent on its own. Trailing line breaks are removed, and multiline snippets always show a preview first.
+- Snippets are stored unencrypted in `snippets.json`, so **do not put passwords in them**.
 
-The private key is never copied or read; OpenSSH only receives the selected file path. Existing browser profiles are migrated to `servers.json` on first start. Pane splits, SSH config import, snippet variables, snippet import/export and SFTP are not included yet.
+### Clipboard
+- `Ctrl+Shift+C` copies, `Ctrl+Shift+V` pastes. Optional copy on select, and a confirmation for multiline paste (also for the context menu and middle click).
+- Own right-click menu (copy, paste, select all, snippets) that also works in programs that take over the mouse, such as micro, htop or mc.
+- In those programs, `Shift`+drag selects text. A setting lets plain dragging select as well.
+- OSC 52: programs on the server can copy into your local clipboard. Reading your clipboard (e.g. `Ctrl+V` in micro) asks first and can be allowed per session.
+
+### Look and layout
+- Server list (left) and snippet panel (right) can each be shown, hidden and resized. If the window gets too narrow for both, the panel you opened last stays visible.
+- Single or double click for opening servers and pasting snippets, set in Settings.
+- Light, dark or system color scheme, and interface size 80–150 %.
+- Per-server designs: text, background, cursor, selection and tab color, and font size.
+- English and German. The language follows the system locale by default.
+
+### Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+Shift+S` | Search and paste a snippet |
+| `Ctrl+Shift+T` | New local shell |
+| `Ctrl+Shift+W` | Close tab |
+| `Ctrl+Tab` | Next tab |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste |
+
+### Where your data lives
+
+Everything is in `~/.config/dev.crabshell.app/`, written atomically, so a crash never leaves a half-written file:
+
+| File | Contents |
+| --- | --- |
+| `servers.json` | Server profiles (the key is stored as a path only, never its contents) |
+| `settings.json` | Settings and designs |
+| `snippets.json` | Snippets. An unreadable file is moved aside to `snippets.json.broken` instead of breaking the app. |
+| `session.json` | Which tabs were open (tab type and server id only, never terminal contents) |
+
+Not included yet: split panes, SSH config import, snippet variables, snippet import/export and SFTP.
 
 ## micro over SSH
 
-To copy and paste between your computer and [micro](https://micro-editor.github.io) running on a server, tell micro to use the terminal clipboard (OSC 52). On the **server**, put this into `~/.config/micro/settings.json` (or run `Ctrl+E` → `set clipboard terminal` in micro):
+To copy and paste between your computer and [micro](https://micro-editor.github.io) running on a server, tell micro to use the terminal clipboard (OSC 52). On the **server**, put this into `~/.config/micro/settings.json`, or run `Ctrl+E` → `set clipboard terminal` in micro:
 
 ```json
 {
@@ -40,24 +221,28 @@ To copy and paste between your computer and [micro](https://micro-editor.github.
 - **Paste with `Ctrl+V` in micro:** micro asks Crabshell for the local clipboard. The first time per session, Crabshell asks whether the server may read it (*Deny* or *Allow for this session*). micro only waits 200 ms for the answer, which is too short for the dialog, so press `Ctrl+V` **once more** after allowing it. From then on, `Ctrl+V` works straight away until you disconnect.
 - **Paste with `Ctrl+Shift+V`** (or right-click → Paste) always works and never gives the server access to your clipboard.
 
-Without `"clipboard": "terminal"`, micro uses its own clipboard on the server (or `xclip`/`wl-copy` there), which cannot reach your computer. Both settings, writing and reading the clipboard, can be changed under Settings → Clipboard (reading: *Ask*, *Always* or *Never*). Only allow reading for servers you trust, because the server receives whatever you copied, including passwords.
+Without `"clipboard": "terminal"`, micro uses its own clipboard on the server (or `xclip`/`wl-copy` there), which cannot reach your computer. Both directions, writing and reading the clipboard, can be changed under Settings → Clipboard. For reading, the options are *Ask*, *Always* or *Never*. Only allow reading for servers you trust, because the server receives whatever you copied, including passwords.
 
-`Shift`+drag selects text in the terminal even while micro uses the mouse, but it copies micro's line numbers too. Use micro's own selection with `Ctrl+C` instead, or turn the ruler off with `set ruler off`.
+`Shift`+drag selects text even while micro uses the mouse, but it copies micro's line numbers too. Use micro's own selection with `Ctrl+C` instead, or turn the ruler off with `set ruler off`.
 
-## Installation
+## Support the project
 
-Every release on GitHub contains ready-made packages for x86_64 (and arm64 where available). All of them need the OpenSSH client (`ssh`).
+<div align="center">
 
-| Distribution | Package | Install |
-| --- | --- | --- |
-| Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` | `sudo apt install ./Crabshell_*_amd64.deb` |
-| Fedora, openSUSE | `.rpm` | `sudo dnf install ./Crabshell-*.x86_64.rpm` or `sudo zypper install ./Crabshell-*.x86_64.rpm` |
-| Arch Linux, CachyOS, EndeavourOS, Manjaro | `.pkg.tar.zst` | `sudo pacman -U crabshell-*-x86_64.pkg.tar.zst` |
-| Any other distribution | `.AppImage` | `chmod +x Crabshell_*.AppImage && ./Crabshell_*.AppImage` |
+**Crabshell is free and open source. If it saves you time, please consider supporting it.** ♥
 
-The `.deb` and `.rpm` packages are built on Ubuntu 22.04 and need glibc 2.35 or newer. The Arch package is built against current Arch Linux and is meant for rolling Arch-based distributions.
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-%E2%99%A5-e98a70?style=for-the-badge&labelColor=1d211c)](https://github.com/sponsors/alex-1987)
+
+</div>
+
+A one-time or monthly contribution via [GitHub Sponsors](https://github.com/sponsors/alex-1987) helps me keep improving Crabshell: new features, more packages, and keeping up with new distributions. The button is also in the app under **ⓘ About**. Crabshell only opens the page in your browser and never handles payment data.
+
+No budget? Starring the repository ⭐, [reporting bugs](https://github.com/alex-1987/Crabshell/issues) and telling others about it helps too.
 
 ## Building it yourself
+
+<details>
+<summary><b>Show build instructions</b></summary>
 
 ### 1. Install the build dependencies
 
@@ -77,7 +262,7 @@ sudo apt install build-essential curl wget file git libwebkit2gtk-4.1-dev libxdo
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # if Rust is not installed yet
 ```
 
-The `nodejs` package in older Ubuntu releases may be too old; in that case install Node.js LTS from [nodejs.org](https://nodejs.org) or via `nvm`.
+The `nodejs` package in older Ubuntu releases may be too old. In that case, install Node.js LTS from [nodejs.org](https://nodejs.org) or via `nvm`.
 
 **Fedora**
 
@@ -114,18 +299,25 @@ npm run tauri build -- --bundles deb             # only one format (deb, rpm or 
 npm run tauri build -- --no-bundle               # only the binary: src-tauri/target/release/crabshell
 ```
 
-The packages end up in `src-tauri/target/release/bundle/` (`deb/`, `rpm/`, `appimage/`). Install them as shown in the table above.
+The packages end up in `src-tauri/target/release/bundle/` (`deb/`, `rpm/`, `appimage/`). Install them as described under [Installation](#installation).
 
 If the AppImage step fails while stripping libraries (common on very new distributions such as Arch), retry with `NO_STRIP=true npm run tauri build -- --bundles appimage`, or use a native package instead.
 
+</details>
+
 ## Development
+
+<details>
+<summary><b>Run, check and release</b></summary>
+
+### Run in development mode
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-## Checks
+### Checks
 
 ```bash
 npm run build
@@ -133,11 +325,11 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -
 SHELL=/bin/sh cargo test -- --ignored   # additionally spawns a real local shell (run inside src-tauri)
 ```
 
-## Releases
+### Releases
 
 Pushing a tag such as `v0.2.1` builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, and the pacman package in an Arch Linux container. Everything is attached to a draft release for that tag, which you publish yourself after checking it.
 
-The version is taken from the tag (`v0.2.1` → `0.2.1`; a suffix such as `v0.3.0-beta.1` marks the release as a pre-release), so the version numbers in the repository do not have to be bumped first. To keep them in sync locally anyway, run `node scripts/set-version.mjs 0.2.1`, which updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`. Starting the workflow manually without a tag uses the version from `src-tauri/tauri.conf.json`.
+The version is taken from the tag (`v0.2.1` → `0.2.1`). A suffix such as `v0.3.0-beta.1` marks the release as a pre-release. You do not have to bump the version numbers in the repository first. To keep them in sync locally anyway, run `node scripts/set-version.mjs 0.2.1`, which updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`. Starting the workflow manually without a tag uses the version from `src-tauri/tauri.conf.json`.
 
 ```sh
 git push origin main
@@ -145,13 +337,20 @@ git tag v0.2.1
 git push origin v0.2.1
 ```
 
-## Notes for contributors
+### Notes for contributors
 
-- **Translations:** UI texts live in `src/i18n.ts`. English is the reference dictionary; other languages must define the same keys (TypeScript reports missing ones). Error messages from the Rust backend stay in English and are translated in the `backendMessages` table there.
-- **UI colors** are defined in `src/styles.css`. After adding new color values, run `python3 scripts/gen-theme-palette.py`; it replaces them with variables and generates the light variant in `src/theme-palette.css`.
+- **Translations:** UI texts live in `src/i18n.ts`. English is the reference dictionary, and other languages must define the same keys (TypeScript reports missing ones). Error messages from the Rust backend stay in English and are translated in the `backendMessages` table there.
+- **UI colors** are defined in `src/styles.css`. After adding new color values, run `python3 scripts/gen-theme-palette.py`. It replaces them with variables and generates the light variant in `src/theme-palette.css`.
 
-## Support
+</details>
 
-Crabshell is free. If it is useful to you, you can support it via [GitHub Sponsors](https://github.com/sponsors/alex-1987), also reachable from the ⓘ About dialog in the app. The app only opens that page in your browser; it never handles payment data.
+## License
 
-The host key check on the first connection happens in the terminal through OpenSSH. Only accept a host key after verifying the displayed fingerprint.
+Crabshell is dual-licensed under either of
+
+- [MIT License](LICENSE-MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in Crabshell, as defined in the Apache-2.0 license, is dual-licensed as above, without any additional terms or conditions.

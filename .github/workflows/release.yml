@@ -68,7 +68,18 @@ jobs:
           # Genau der gepushte Tag (kein neuer Tag); bei "Run workflow" v<Version aus tauri.conf.json>.
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
           releaseName: 'Crabshell v${{ steps.version.outputs.version }}'
-          releaseBody: 'Linux-Pakete: .deb (Debian, Ubuntu, Mint, Pop!_OS), .rpm (Fedora, openSUSE), .pkg.tar.zst (Arch, CachyOS, EndeavourOS, Manjaro) und .AppImage (alle anderen). Voraussetzung: OpenSSH-Client (ssh) ist installiert.'
+          releaseBody: |
+            Linux packages for x86_64 and arm64. Requires the OpenSSH client (`ssh`).
+
+            | System | File |
+            | --- | --- |
+            | Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` (`amd64` / `arm64`) |
+            | Fedora, openSUSE, RHEL | `.rpm` (`x86_64` / `aarch64`) |
+            | Arch Linux, CachyOS, EndeavourOS, Manjaro | `.pkg.tar.zst` (x86_64) |
+            | Any other distribution | `.AppImage` |
+
+            📦 Step-by-step instructions: https://github.com/alex-1987/Crabshell#installation
+            ♥ Like Crabshell? Support it via [GitHub Sponsors](https://github.com/sponsors/alex-1987).
           releaseDraft: true                # erst prüfen, dann selbst veröffentlichen
           prerelease: ${{ contains(steps.version.outputs.version, '-') }}   # z. B. v0.3.0-beta.1
 

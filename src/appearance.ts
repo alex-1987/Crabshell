@@ -19,6 +19,11 @@ export const builtinAppearance: Appearance = {
 export const defaultSettings: AppSettings = {
   sidebarWidth: 280,
   sidebarCollapsed: false,
+  snippetPanelOpen: false,
+  snippetPanelWidth: 280,
+  serverOpenClick: "single",
+  snippetInsertClick: "single",
+  restoreTabs: false,
   copyOnSelect: false,
   confirmMultilinePaste: true,
   forceMouseSelection: false,

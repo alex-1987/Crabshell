@@ -1,6 +1,7 @@
 import { useState } from "react";
+import DesktopIntegration from "./DesktopIntegration";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
-import type { AppSettings, Appearance, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
+import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
 import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
 import { themeModeCycle, themeModeLabel, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
 
@@ -83,14 +84,22 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
   return (
     <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") onClose(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
       <section aria-labelledby="settings-title" aria-modal="true" className="server-dialog settings-dialog" role="dialog">
-        <header className="dialog-heading">
-          <div><div className="page-eyebrow">CRABSHELL</div><h2 id="settings-title">{t("settings.title")}</h2></div>
-          <button aria-label={t("settings.close")} className="icon-button" onClick={onClose} type="button">×</button>
-        </header>
+        {/* Sticky: title, Save/Cancel and the section tabs stay visible while the content scrolls. */}
+        <div className="settings-top">
+          <header className="dialog-heading settings-heading">
+            <div><div className="page-eyebrow">CRABSHELL</div><h2 id="settings-title">{t("settings.title")}</h2></div>
+            <div className="settings-top-actions">
+              <button className="button button-secondary" onClick={onClose} type="button">{t("common.cancel")}</button>
+              <button className="button button-primary" disabled={saving} onClick={() => void save()} type="button">{t("common.save")}</button>
+              <button aria-label={t("settings.close")} className="icon-button" onClick={onClose} type="button">×</button>
+            </div>
+          </header>
 
-        <div aria-label={t("settings.sections")} className="settings-sections" role="tablist">
-          <button aria-selected={section === "general"} autoFocus className="settings-section-tab" onClick={() => setSection("general")} role="tab" type="button">{t("settings.general")}</button>
-          <button aria-selected={section === "appearances"} className="settings-section-tab" onClick={() => setSection("appearances")} role="tab" type="button">{t("settings.designs")}</button>
+          <div aria-label={t("settings.sections")} className="settings-sections" role="tablist">
+            <button aria-selected={section === "general"} autoFocus className="settings-section-tab" onClick={() => setSection("general")} role="tab" type="button">{t("settings.general")}</button>
+            <button aria-selected={section === "appearances"} className="settings-section-tab" onClick={() => setSection("appearances")} role="tab" type="button">{t("settings.designs")}</button>
+          </div>
+          {error && <div aria-live="polite" className="editor-notice settings-error">{error}</div>}
         </div>
 
         {section === "general" ? (
@@ -111,6 +120,23 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <button className="text-action" disabled={draft.uiScale === 100} onClick={() => setDraft({ ...draft, uiScale: 100 })} type="button">{t("settings.reset")}</button>
             </div>
             <div className="form-footnote">{t("settings.uiScaleHint")}</div>
+            <h3>{t("settings.workspace")}</h3>
+            <label className="field-label" htmlFor="server-open-click">{t("settings.serverOpenClick")}</label>
+            <select id="server-open-click" onChange={(event) => setDraft({ ...draft, serverOpenClick: event.target.value as ClickMode })} value={draft.serverOpenClick}>
+              <option value="single">{t("settings.clickSingle")}</option>
+              <option value="double">{t("settings.clickDouble")}</option>
+            </select>
+            <label className="field-label" htmlFor="snippet-insert-click">{t("settings.snippetInsertClick")}</label>
+            <select id="snippet-insert-click" onChange={(event) => setDraft({ ...draft, snippetInsertClick: event.target.value as ClickMode })} value={draft.snippetInsertClick}>
+              <option value="single">{t("settings.clickSingle")}</option>
+              <option value="double">{t("settings.clickDouble")}</option>
+            </select>
+            <label className="field-label" htmlFor="restore-tabs">{t("settings.startup")}</label>
+            <select id="restore-tabs" onChange={(event) => setDraft({ ...draft, restoreTabs: event.target.value === "restore" })} value={draft.restoreTabs ? "restore" : "empty"}>
+              <option value="empty">{t("settings.startupEmpty")}</option>
+              <option value="restore">{t("settings.startupRestore")}</option>
+            </select>
+            <div className="form-footnote">{t("settings.startupHint")}</div>
             <h3>{t("settings.clipboard")}</h3>
             <label className="sidebar-setting">
               <input checked={draft.copyOnSelect} onChange={(event) => setDraft({ ...draft, copyOnSelect: event.target.checked })} type="checkbox" />
@@ -147,6 +173,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <option value="">{t("settings.defaultDesignOption")}</option>
               {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
             </select>
+            <DesktopIntegration />
           </div>
         ) : (
           <div className="settings-panel appearance-layout" role="tabpanel">
@@ -195,12 +222,6 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
             </div>
           </div>
         )}
-
-        {error && <div aria-live="polite" className="editor-notice">{error}</div>}
-        <div className="editor-actions">
-          <button className="button button-secondary" onClick={onClose} type="button">{t("common.cancel")}</button>
-          <button className="button button-primary" disabled={saving} onClick={() => void save()} type="button">{t("common.save")}</button>
-        </div>
       </section>
     </div>
   );

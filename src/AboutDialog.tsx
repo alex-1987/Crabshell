@@ -1,5 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
+import BrandMark from "./BrandMark";
 import { t, translateBackend } from "./i18n";
 
 export const REPOSITORY_URL = "https://github.com/alex-1987/Crabshell";
@@ -27,7 +28,7 @@ export default function AboutDialog({ version, onClose }: AboutDialogProps) {
         </header>
 
         <div className="about-brand">
-          <div className="brand-mark" aria-hidden="true"><span /></div>
+          <BrandMark className="about-logo" size={72} />
           <div>
             <div className="about-version">{t("about.version", { version: version || "…" })}</div>
             <div className="about-tagline">{t("about.tagline")}</div>

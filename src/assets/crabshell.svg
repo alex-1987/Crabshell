@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3127"/>
+      <stop offset="1" stop-color="#151914"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dcf59a"/>
+      <stop offset="1" stop-color="#a6c45a"/>
+    </linearGradient>
+    <linearGradient id="claw" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4a088"/>
+      <stop offset="1" stop-color="#d9735a"/>
+    </linearGradient>
+    <mask id="pincerL">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M110 168 Q 112 120 126 92 L 182 126 Q 150 140 110 168 Z" fill="#000"/>
+    </mask>
+    <mask id="pincerR">
+      <rect width="512" height="512" fill="#fff"/>
+      <path d="M402 168 Q 400 120 386 92 L 330 126 Q 362 140 402 168 Z" fill="#000"/>
+    </mask>
+  </defs>
+
+  <!-- app tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#tile)"/>
+  <rect x="24" y="24" width="464" height="464" rx="104" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="4"/>
+
+  <!-- legs -->
+  <g fill="none" stroke="#a6c45a" stroke-linecap="round" stroke-width="18">
+    <path d="M168 334 L124 360"/><path d="M186 352 L150 392"/><path d="M212 362 L192 408"/>
+    <path d="M344 334 L388 360"/><path d="M326 352 L362 392"/><path d="M300 362 L320 408"/>
+  </g>
+
+  <!-- arms -->
+  <g fill="none" stroke="#b9d66b" stroke-linecap="round" stroke-width="24">
+    <path d="M168 270 C 132 254 116 224 120 196"/>
+    <path d="M344 270 C 380 254 396 224 392 196"/>
+  </g>
+
+  <!-- claws -->
+  <circle cx="110" cy="164" r="50" fill="url(#claw)" mask="url(#pincerL)"/>
+  <circle cx="402" cy="164" r="50" fill="url(#claw)" mask="url(#pincerR)"/>
+
+  <!-- eye stalks -->
+  <g stroke="#b9d66b" stroke-linecap="round" stroke-width="14">
+    <path d="M226 196 L214 154"/><path d="M286 196 L298 154"/>
+  </g>
+  <circle cx="212" cy="146" r="17" fill="#eef8d2"/>
+  <circle cx="300" cy="146" r="17" fill="#eef8d2"/>
+  <circle cx="215" cy="148" r="8" fill="#161a15"/>
+  <circle cx="297" cy="148" r="8" fill="#161a15"/>
+
+  <!-- shell -->
+  <path d="M136 300 C 136 226 190 186 256 186 C 322 186 376 226 376 300 C 376 342 326 366 256 366 C 186 366 136 342 136 300 Z" fill="url(#shell)"/>
+  <path d="M160 300 C 162 240 204 208 256 208" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-linecap="round" stroke-width="10"/>
+
+  <!-- terminal prompt on the shell -->
+  <path d="M206 254 L246 284 L206 314" fill="none" stroke="#1d211c" stroke-linecap="round" stroke-linejoin="round" stroke-width="22"/>
+  <path d="M264 316 L310 316" fill="none" stroke="#1d211c" stroke-linecap="round" stroke-width="22"/>
+</svg>
