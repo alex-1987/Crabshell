@@ -1,0 +1,54 @@
+name: release
+
+# Startet, wenn ein Tag wie v0.1.0 gepusht wird (oder manuell über "Run workflow").
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write   # nötig, damit der Workflow das Release anlegen und Dateien hochladen darf
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Bewusst eine ältere Ubuntu-Basis: Pakete laufen dann auch auf älteren Distributionen
+          # (die eingebundene glibc-Version bestimmt die Mindestvoraussetzung).
+          - platform: ubuntu-22.04        # x86_64
+          - platform: ubuntu-22.04-arm    # arm64 (nur in öffentlichen Repos verfügbar, sonst Zeile entfernen)
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__             # __VERSION__ wird durch die App-Version ersetzt
+          releaseName: 'Crabshell v__VERSION__'
+          releaseBody: 'Linux-Pakete (.deb, .rpm, .AppImage). Voraussetzung: OpenSSH-Client (ssh) ist installiert.'
+          releaseDraft: true                # erst prüfen, dann selbst veröffentlichen
+          prerelease: true                  # für 0.1.0 sinnvoll
