@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ColorField from "./ColorField";
 import DesktopIntegration from "./DesktopIntegration";
 import ShortcutList from "./ShortcutList";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
@@ -139,6 +140,11 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <option value="restore">{t("settings.startupRestore")}</option>
             </select>
             <div className="form-footnote">{t("settings.startupHint")}</div>
+            <label className="sidebar-setting">
+              <input checked={draft.confirmClose} onChange={(event) => setDraft({ ...draft, confirmClose: event.target.checked })} type="checkbox" />
+              <span>{t("settings.confirmClose")}</span>
+            </label>
+            <div className="form-footnote">{t("settings.confirmCloseHint")}</div>
             <h3>{t("settings.clipboard")}</h3>
             <label className="sidebar-setting">
               <input checked={draft.copyOnSelect} onChange={(event) => setDraft({ ...draft, copyOnSelect: event.target.checked })} type="checkbox" />
@@ -199,11 +205,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
 
               <div className="color-grid">
                 {colorFields.map((field) => (
-                  <label className="color-field" key={field.key}>
-                    <input onChange={(event) => updateAppearance({ [field.key]: event.target.value })} type="color" value={selected[field.key]} />
-                    <span>{t(field.label)}</span>
-                    <code>{selected[field.key]}</code>
-                  </label>
+                  <ColorField key={field.key} label={t(field.label)} onChange={(value) => updateAppearance({ [field.key]: value })} value={selected[field.key]} />
                 ))}
               </div>
 

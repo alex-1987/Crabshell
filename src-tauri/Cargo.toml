@@ -1,6 +1,6 @@
 [package]
 name = "crabshell"
-version = "0.2.5"
+version = "0.2.6"
 description = "A local OpenSSH terminal manager"
 authors = ["Crabshell"]
 edition = "2021"
@@ -22,3 +22,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+
+# Smaller dev builds: line numbers for Crabshell itself, no debug info for dependencies.
+# Cuts the size of target/debug considerably and speeds up linking.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

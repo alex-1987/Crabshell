@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { defaultSettings } from "./appearance";
@@ -130,6 +131,11 @@ function loadLegacySettings(): AppSettings {
   }
 }
 
+/** Panes whose shell or SSH connection is still alive. */
+function runningSessionCount(tabs: TerminalTab[]): number {
+  return tabs.reduce((count, tab) => count + tab.panes.filter((pane) => pane.status === "connected" || pane.status === "connecting").length, 0);
+}
+
 /** "user@host" plus ":port" when it is not the default. */
 function serverAddress(server: SavedHost): string {
   return `${server.username ? `${server.username}@` : ""}${server.host}${server.port && server.port !== 22 ? `:${server.port}` : ""}`;
@@ -233,6 +239,42 @@ export default function TabsApp() {
   const activeTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.activeTabId) ?? null;
   const canInsertSnippet = activeTab?.status === "connected";
   const tabDrag = useTabDrag(terminalSnapshot.tabs, terminalSnapshot.activeTabId, titleOf);
+
+  // Ask before closing the window while sessions are still running.
+  const [closeConfirm, setCloseConfirm] = useState<number | null>(null);
+  const [closeDontAsk, setCloseDontAsk] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow().onCloseRequested((event) => {
+      const running = runningSessionCount(terminalStore.getSnapshot().tabs);
+      if (!settingsRef.current.confirmClose || running === 0) return;
+      event.preventDefault();
+      setCloseDontAsk(false);
+      setCloseConfirm(running);
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  async function confirmCloseWindow() {
+    if (closeDontAsk) {
+      const next = { ...settingsRef.current, confirmClose: false };
+      applySettings(next);
+      try {
+        await invoke("save_settings", { settings: next });
+      } catch {
+        // Closing matters more than remembering the choice.
+      }
+    }
+    setCloseConfirm(null);
+    await getCurrentWindow().destroy();
+  }
 
   // Tag chips for the snippet panel (tags compare case-insensitively, first spelling wins).
   const tagChips = (() => {
@@ -971,6 +1013,25 @@ export default function TabsApp() {
           </div>
         );
       })()}
+      {closeConfirm !== null && (
+        <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") setCloseConfirm(null); }} onMouseDown={(event) => { if (event.target === event.currentTarget) setCloseConfirm(null); }} role="presentation">
+          <section aria-labelledby="close-title" aria-modal="true" className="server-dialog paste-dialog" role="dialog">
+            <header className="dialog-heading">
+              <div><div className="page-eyebrow">{t("closeApp.eyebrow")}</div><h2 id="close-title">{closeConfirm === 1 ? t("closeApp.titleOne") : t("closeApp.title", { count: closeConfirm })}</h2></div>
+              <button aria-label={t("common.cancel")} className="icon-button" onClick={() => setCloseConfirm(null)} type="button">×</button>
+            </header>
+            <div className="form-footnote">{t("closeApp.text")}</div>
+            <label className="sidebar-setting">
+              <input checked={closeDontAsk} onChange={(event) => setCloseDontAsk(event.target.checked)} type="checkbox" />
+              <span>{t("closeApp.dontAsk")}</span>
+            </label>
+            <div className="editor-actions">
+              <button autoFocus className="button button-secondary" onClick={() => setCloseConfirm(null)} type="button">{t("common.cancel")}</button>
+              <button className="button button-primary" onClick={() => void confirmCloseWindow()} type="button">{t("closeApp.confirm")}</button>
+            </div>
+          </section>
+        </div>
+      )}
       {tabDrag.overlay}
       {splitMenu && activeTab && (
         <SplitMenu

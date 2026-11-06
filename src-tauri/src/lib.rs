@@ -481,7 +481,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             close_session
         ])
         .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+            // Not on CloseRequested: the frontend may cancel the close to ask first.
+            if matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<AppState>().close_all();
             }
         })

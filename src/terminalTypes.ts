@@ -52,6 +52,8 @@ export type AppSettings = {
   snippetInsertClick: ClickMode;
   /** Reopen the tabs of the last run on start instead of an empty workspace. */
   restoreTabs: boolean;
+  /** Ask before closing the window while terminal sessions are still running. */
+  confirmClose: boolean;
   /** Custom terminal shortcuts per action; missing actions use the defaults. */
   keybindings: Keybindings;
   copyOnSelect: boolean;

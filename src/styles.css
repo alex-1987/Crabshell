@@ -477,15 +477,15 @@ select:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e7
 /* WebKitGTK draws the option popup with the system theme, so set both colors explicitly. */
 select option { color: var(--c-e9eee2); background: var(--c-1d211c); }
 select option:checked { color: var(--c-192016); background: var(--acid); }
-.settings-dialog { width: min(760px, calc((100vw - 40px) / var(--ui-zoom, 1))); }
+.settings-dialog { width: min(920px, calc((100vw - 40px) / var(--ui-zoom, 1))); max-height: min(960px, calc((100dvh - 40px) / var(--ui-zoom, 1))); }
 .settings-sections { display: flex; gap: 4px; margin: 10px 0 4px; border-bottom: 1px solid var(--line); }
 .settings-section-tab { height: 32px; padding: 0 14px; border: 1px solid transparent; border-bottom: 0; border-radius: 5px 5px 0 0; color: var(--c-9da694); background: transparent; cursor: pointer; font-size: 11px; }
 .settings-section-tab[aria-selected="true"] { border-color: var(--c-3b4336); color: var(--c-e2e8db); background: var(--c-272d25); box-shadow: inset 0 2px 0 var(--acid); }
-.settings-panel { min-height: 360px; padding: 6px 0 14px; }
+.settings-panel { min-height: 460px; padding: 6px 0 14px; }
 .settings-panel h3 { margin: 18px 0 9px; color: var(--c-cbd2c4); font-size: 12px; font-weight: 650; }
 .sidebar-setting { display: flex; align-items: center; gap: 9px; margin: 8px 0; color: var(--c-c8d0c0); font-size: 11px; cursor: pointer; }
 .sidebar-setting input { width: 15px; height: 15px; margin: 0; accent-color: var(--acid); }
-.appearance-layout { display: grid; grid-template-columns: 200px 1fr; gap: 20px; }
+.appearance-layout { display: grid; grid-template-columns: 210px 1fr; gap: 24px; }
 .appearance-list { display: flex; flex-direction: column; gap: 4px; padding-top: 14px; }
 .appearance-list .button { height: 32px; margin-top: 6px; }
 .appearance-item { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 6px 8px; border: 1px solid transparent; border-radius: 5px; color: var(--c-c8d0c0); background: transparent; cursor: pointer; text-align: left; font-size: 11px; }
@@ -494,9 +494,23 @@ select option:checked { color: var(--c-192016); background: var(--acid); }
 .appearance-swatch { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border: 2px solid; border-radius: 4px; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; }
 .appearance-item-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appearance-badge { color: var(--c-9aab79); font-size: 9px; }
-.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 15px; }
-.color-field { display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; column-gap: 9px; align-items: center; color: var(--c-b6beb0); font-size: 11px; cursor: pointer; }
-.color-field input[type="color"] { grid-row: span 2; width: 34px; height: 34px; padding: 2px; cursor: pointer; }
+.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 15px; }
+.color-field { position: relative; display: grid; grid-template-columns: 34px 1fr; grid-template-rows: auto auto; column-gap: 9px; align-items: center; color: var(--c-b6beb0); font-size: 11px; }
+.color-swatch { grid-row: span 2; width: 34px; height: 34px; padding: 0; border: 1px solid var(--c-3a4037); border-radius: 5px; box-shadow: inset 0 0 0 2px var(--input); cursor: pointer; }
+.color-swatch:hover, .color-swatch:focus-visible, .color-swatch[aria-expanded="true"] { border-color: var(--c-9ebc65); outline: none; }
+.color-popover { position: absolute; top: 40px; left: 0; z-index: 30; display: grid; gap: 9px; width: 220px; padding: 10px; border: 1px solid var(--c-454d40); border-radius: 7px; background: var(--c-20251f); box-shadow: 0 12px 34px var(--c-00000088); }
+.color-area { position: relative; height: 130px; border-radius: 5px; cursor: crosshair; touch-action: none; }
+.color-area-handle { position: absolute; width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); transform: translate(-50%, -50%); pointer-events: none; }
+.color-popover-right { right: 0; left: auto; }
+.color-popover-up { top: auto; bottom: 40px; }
+.color-hue { position: relative; height: 12px; border-radius: 6px; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); cursor: pointer; touch-action: none; }
+.color-hue-handle { position: absolute; top: 50%; width: 8px; height: 16px; border: 2px solid #fff; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); transform: translate(-50%, -50%); pointer-events: none; }
+.color-hex-row { display: flex; align-items: center; gap: 8px; }
+.color-preview { width: 30px; height: 30px; flex: 0 0 auto; border: 1px solid var(--c-3a4037); border-radius: 5px; }
+.color-hex-row input { height: 30px; text-transform: lowercase; }
+.color-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.color-preset { height: 22px; padding: 0; border: 1px solid var(--c-3a4037); border-radius: 4px; cursor: pointer; }
+.color-preset:hover, .color-preset[aria-pressed="true"] { border-color: var(--c-9ebc65); box-shadow: 0 0 0 1px var(--c-9ebc65); }
 .color-field code { color: var(--c-7d8778); font-size: 10px; }
 .range-input { height: auto; padding: 0; border: 0; background: transparent; accent-color: var(--acid); }
 .range-input:focus { box-shadow: none; }

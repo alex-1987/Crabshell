@@ -82,6 +82,8 @@ pub(crate) struct AppSettings {
     pub snippet_insert_click: String,
     /// Reopen the tabs of the last run on start instead of an empty workspace.
     pub restore_tabs: bool,
+    /// Ask before closing the window while terminal sessions are still running.
+    pub confirm_close: bool,
     /// Custom terminal shortcuts: action → key combos (e.g. "Ctrl+Shift+E"). Missing actions use the defaults.
     pub keybindings: BTreeMap<String, Vec<String>>,
     pub copy_on_select: bool,
@@ -156,6 +158,7 @@ impl Default for AppSettings {
             server_open_click: "single".to_string(),
             snippet_insert_click: "single".to_string(),
             restore_tabs: false,
+            confirm_close: true,
             keybindings: BTreeMap::new(),
             copy_on_select: true,
             confirm_multiline_paste: true,
@@ -622,6 +625,7 @@ mod tests {
         assert_eq!(settings.server_open_click, "single");
         assert_eq!(settings.snippet_insert_click, "single");
         assert!(!settings.restore_tabs);
+        assert!(settings.confirm_close);
     }
 
     #[test]

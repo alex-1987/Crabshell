@@ -154,6 +154,14 @@ const en = {
 
   // Common
   "common.cancel": "Cancel",
+  "closeApp.eyebrow": "Quit Crabshell",
+  "closeApp.title": "{count} sessions are still running",
+  "closeApp.titleOne": "1 session is still running",
+  "closeApp.text": "Closing Crabshell ends all local shells and SSH connections. Programs running in them are stopped, unless they run in tmux, screen or with nohup.",
+  "closeApp.dontAsk": "Don't ask again",
+  "closeApp.confirm": "Quit",
+  "settings.confirmClose": "Ask before closing while sessions are running",
+  "settings.confirmCloseHint": "Shows how many shells and SSH connections are still open before the window closes.",
   "common.save": "Save",
 
   // Settings dialog
@@ -247,6 +255,7 @@ const en = {
   "settings.selection": "Selection",
   "settings.tabColor": "Tab color",
   "settings.fontSize": "Font size",
+  "settings.hexColor": "Hex colour",
   "settings.previewSelected": "selected text",
   "settings.previewNormal": "normal text",
   "settings.unused": "Not used by any server.",
@@ -546,6 +555,14 @@ const de: Record<MessageKey, string> = {
   "server.save": "Server speichern",
 
   "common.cancel": "Abbrechen",
+  "closeApp.eyebrow": "Crabshell beenden",
+  "closeApp.title": "{count} Sitzungen sind noch aktiv",
+  "closeApp.titleOne": "1 Sitzung ist noch aktiv",
+  "closeApp.text": "Beim Schließen werden alle lokalen Shells und SSH-Verbindungen beendet. Laufende Programme darin werden gestoppt, außer sie laufen in tmux, screen oder mit nohup.",
+  "closeApp.dontAsk": "Nicht mehr anzeigen",
+  "closeApp.confirm": "Beenden",
+  "settings.confirmClose": "Vor dem Schließen nachfragen, wenn Sitzungen aktiv sind",
+  "settings.confirmCloseHint": "Zeigt an, wie viele Shells und SSH-Verbindungen noch offen sind, bevor das Fenster geschlossen wird.",
   "common.save": "Speichern",
 
   "settings.title": "Einstellungen",
@@ -638,6 +655,7 @@ const de: Record<MessageKey, string> = {
   "settings.selection": "Markierung",
   "settings.tabColor": "Tab-Farbe",
   "settings.fontSize": "Schriftgröße",
+  "settings.hexColor": "Hex-Farbe",
   "settings.previewSelected": "markierter Text",
   "settings.previewNormal": "normaler Text",
   "settings.unused": "Von keinem Server verwendet.",
