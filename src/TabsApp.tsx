@@ -14,11 +14,13 @@ import ServerList, { serverCategories } from "./ServerList";
 import FilterChips from "./FilterChips";
 import { deleteSnippet, listSnippets, saveSnippet, type Snippet } from "./snippets";
 import TerminalContextMenu from "./TerminalContextMenu";
-import TerminalPane from "./TerminalPane";
+import SplitMenu from "./SplitMenu";
+import SplitView from "./SplitView";
+import { useTabDrag } from "./useTabDrag";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { terminalStore } from "./terminalStore";
-import type { AppSettings, SavedHost, SessionState, SessionStatus, TerminalTab } from "./terminalTypes";
+import type { AppSettings, SavedHost, SessionState, SessionStatus, SplitDirection, SplitTarget, TerminalPaneState, TerminalTab } from "./terminalTypes";
 import "./styles.css";
 
 const HOSTS_STORAGE_KEY = "crabshell.saved-hosts.v1";
@@ -30,8 +32,26 @@ function statusLabel(status: SessionStatus): string {
   return t(`status.${status}`);
 }
 
+function paneTitle(pane: TerminalPaneState): string {
+  return pane.kind === "local" ? t("tabs.localShell") : pane.title;
+}
+
+/** Tab label: the pane title, or both titles for a split tab. */
 function titleOf(tab: TerminalTab): string {
-  return tab.kind === "local" ? t("tabs.localShell") : tab.title;
+  return tab.panes.map(paneTitle).join(tab.split === "column" ? " / " : " | ");
+}
+
+function withShortcut(label: string, shortcut: string): string {
+  return shortcut ? `${label} (${shortcut})` : label;
+}
+
+function SplitIcon({ direction }: { direction: SplitDirection }) {
+  return (
+    <svg aria-hidden="true" fill="none" height="15" stroke="currentColor" strokeWidth="1.6" viewBox="0 0 16 16" width="15">
+      <rect height="12" rx="2" width="14" x="1" y="2" />
+      {direction === "row" ? <path d="M8 2v12" /> : <path d="M1 8h14" />}
+    </svg>
+  );
 }
 
 type PersistentData = {
@@ -106,10 +126,18 @@ type Panel = "servers" | "snippets";
 function restoreSession(session: SessionState, servers: SavedHost[]) {
   const opened: string[] = [];
   for (const tab of session.tabs) {
-    if (tab.kind === "local") opened.push(terminalStore.openLocalShell());
+    let tabId: string | null = null;
+    if (tab.kind === "local") tabId = terminalStore.openLocalShell();
     else {
       const server = servers.find((item) => item.id === tab.serverId);
-      if (server) opened.push(terminalStore.openServer(server));
+      if (server) tabId = terminalStore.openServer(server);
+    }
+    if (!tabId) continue;
+    opened.push(tabId);
+    if (tab.splitDirection) {
+      const server = tab.splitKind === "ssh" ? servers.find((item) => item.id === tab.splitServerId) : undefined;
+      const target: SplitTarget | null = tab.splitKind === "local" ? { kind: "local" } : server ? { kind: "server", server } : null;
+      if (target) terminalStore.splitTab(tabId, tab.splitDirection, target);
     }
   }
   const active = opened[Math.min(session.activeIndex, opened.length - 1)];
@@ -142,6 +170,8 @@ export default function TabsApp() {
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [serverQuery, setServerQuery] = useState("");
+  /** Chooser for what a new split pane runs, anchored at a button or the context menu. */
+  const [splitMenu, setSplitMenu] = useState<{ direction: SplitDirection; x: number; y: number } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarNotice, setSidebarNotice] = useState("");
   const [snippetPanelOpen, setSnippetPanelOpen] = useState(false);
@@ -181,6 +211,7 @@ export default function TabsApp() {
   const terminalSnapshot = useSyncExternalStore(terminalStore.subscribe, terminalStore.getSnapshot);
   const activeTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.activeTabId) ?? null;
   const canInsertSnippet = activeTab?.status === "connected";
+  const tabDrag = useTabDrag(terminalSnapshot.tabs, terminalSnapshot.activeTabId, titleOf);
 
   // Tag chips for the snippet panel (tags compare case-insensitively, first spelling wins).
   const tagChips = (() => {
@@ -214,7 +245,18 @@ export default function TabsApp() {
   }, []);
 
   // Remember open tabs (local shells and server ids, nothing else) for the next start.
-  const sessionTabs = terminalSnapshot.tabs.map((tab) => ({ kind: tab.kind, serverId: tab.kind === "ssh" ? tab.server?.id ?? "" : "" }));
+  const sessionTabs = terminalSnapshot.tabs.map((tab) => {
+    const [first, second] = tab.panes;
+    const serverIdOf = (pane: TerminalPaneState) => pane.kind === "ssh" ? pane.server?.id ?? "" : "";
+    const secondValid = second && (second.kind === "local" || serverIdOf(second));
+    return {
+      kind: first.kind,
+      serverId: serverIdOf(first),
+      splitDirection: secondValid ? tab.split ?? "row" : "",
+      splitKind: secondValid ? second.kind : "",
+      splitServerId: secondValid ? serverIdOf(second) : "",
+    };
+  });
   const sessionKey = JSON.stringify([sessionTabs, terminalSnapshot.tabs.findIndex((tab) => tab.id === terminalSnapshot.activeTabId)]);
   useEffect(() => {
     if (!sessionRestored) return;
@@ -241,15 +283,43 @@ export default function TabsApp() {
         if (mounted) setSnippetsReady(true);
       });
     terminalStore.onSnippetShortcut(() => setPickerOpen(true));
+    terminalStore.onSplitShortcut((direction, at) => requestSplitRef.current(direction, null, at));
     return () => {
       mounted = false;
       terminalStore.onSnippetShortcut(null);
+      terminalStore.onSplitShortcut(null);
     };
   }, []);
 
   function insertSnippet(snippet: Snippet, execute: boolean) {
     setPickerOpen(false);
     terminalStore.insertSnippet(snippet.text, execute);
+  }
+
+  /** Already split: change the direction. Otherwise ask what the new pane should run. */
+  function requestSplit(direction: SplitDirection, anchor: DOMRect | null, at: { x: number; y: number } | null = null) {
+    const tab = terminalSnapshot.tabs.find((item) => item.id === terminalSnapshot.activeTabId);
+    if (!tab) return;
+    if (tab.panes.length > 1) {
+      terminalStore.setSplitDirection(tab.id, direction);
+      return;
+    }
+    const x = anchor ? anchor.right - 260 : at?.x ?? window.innerWidth / 2;
+    const y = anchor ? anchor.bottom + 6 : at?.y ?? window.innerHeight / 3;
+    setSplitMenu({ direction, x, y });
+  }
+  const requestSplitRef = useRef(requestSplit);
+  requestSplitRef.current = requestSplit;
+
+  function chooseSplit(target: SplitTarget) {
+    if (!splitMenu) return;
+    setSplitMenu(null);
+    terminalStore.splitActiveTab(splitMenu.direction, target);
+  }
+
+  function closeSplitMenu() {
+    setSplitMenu(null);
+    terminalStore.focusActiveTerminal();
   }
 
   function closePicker() {
@@ -308,6 +378,7 @@ export default function TabsApp() {
         snippetPanelWidthRef.current = nextSettings.snippetPanelWidth;
         settingsRef.current = nextSettings;
         terminalStore.setClipboardPreferences(nextSettings);
+        terminalStore.setKeybindings(nextSettings.keybindings);
         terminalStore.setAppearances(nextSettings.appearances, nextSettings.defaultAppearanceId, nextSettings.localAppearanceId);
         localStorage.removeItem(HOSTS_STORAGE_KEY);
         localStorage.removeItem(LEGACY_HOST_STORAGE_KEY);
@@ -424,6 +495,7 @@ export default function TabsApp() {
     settingsRef.current = normalized;
     setAppSettings(normalized);
     terminalStore.setClipboardPreferences(normalized);
+    terminalStore.setKeybindings(normalized.keybindings);
     terminalStore.setAppearances(normalized.appearances, normalized.defaultAppearanceId, normalized.localAppearanceId);
     return normalized;
   }
@@ -655,8 +727,8 @@ export default function TabsApp() {
 
         <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
           {terminalSnapshot.tabs.map((tab) => (
-            <div className={`terminal-tab${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-active" : ""}`} key={tab.id} style={{ "--tab-color": tab.appearance.tabColor } as CSSProperties}>
-              <button aria-selected={tab.id === terminalSnapshot.activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} role="tab" title={titleOf(tab)} type="button">
+            <div className={`terminal-tab${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} style={{ "--tab-color": tab.appearance.tabColor } as CSSProperties}>
+              <button aria-selected={tab.id === terminalSnapshot.activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} role="tab" title={`${titleOf(tab)} · ${t("drag.hint")}`} type="button" {...tabDrag.tabHandlers(tab.id)}>
                 <span className={`tab-status-dot status-${tab.status}`} />
                 {tab.kind === "local" && <span aria-label={t("tabs.local")} className="tab-kind-local">&gt;_</span>}
                 <span className="terminal-tab-title">{titleOf(tab)}</span>
@@ -678,9 +750,23 @@ export default function TabsApp() {
                     <div className="target-icon" aria-hidden="true"><span /></div>
                     <div><div className="target-name">{titleOf(tab)}</div><div className="target-subtitle">{tab.kind === "local" ? t("terminal.localSubtitle") : t("terminal.sshSubtitle")}</div></div>
                   </div>
-                  <div className="transport-tag"><span /> {tab.kind === "local" ? t("terminal.local") : "OPENSSH"} <b>·</b> PTY</div>
+                  <div className="terminal-heading-actions">
+                    <div className="transport-tag"><span /> {tab.kind === "local" ? t("terminal.local") : "OPENSSH"} <b>·</b> PTY</div>
+                    <div aria-label={t("split.group")} className="split-buttons" role="group">
+                      {(["row", "column"] as const).map((direction) => {
+                        const label = tab.panes.length > 1
+                          ? t(direction === "row" ? "menu.layoutRow" : "menu.layoutColumn")
+                          : withShortcut(t(direction === "row" ? "menu.splitRow" : "menu.splitColumn"), terminalStore.shortcutLabel(direction === "row" ? "splitRight" : "splitDown"));
+                        return (
+                          <button aria-label={label} aria-pressed={tab.panes.length > 1 && tab.split === direction} className="icon-button split-button" key={direction} onClick={(event) => requestSplit(direction, event.currentTarget.getBoundingClientRect())} title={label} type="button">
+                            <SplitIcon direction={direction} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-                <div className="terminal-body" style={{ "--terminal-bg": tab.appearance.background } as CSSProperties}><TerminalPane tabId={tab.id} paneId={tab.paneTree.paneId} /></div>
+                <SplitView paneTitle={paneTitle} statusLabel={statusLabel} tab={tab} />
                 <div className="terminal-statusbar">
                   <div className="status-message"><span className={`status-led status-${tab.status}`} />{tab.notice || statusLabel(tab.status)}</div>
                   <div className="terminal-metrics">{tab.status === "connected" ? t("terminal.sessionActive") : t("terminal.localSession")}<span>UTF-8</span></div>
@@ -692,7 +778,17 @@ export default function TabsApp() {
 
         <footer className="workspace-footer">
           <span>Crabshell <b>{appVersion}</b></span>
-          <span>{t("footer.shortcuts")}</span>
+          <span>{[
+            [terminalStore.shortcutLabel("copy"), terminalStore.shortcutLabel("paste"), t("footer.copyPaste")],
+            [terminalStore.shortcutLabel("snippets"), t("footer.snippets")],
+            [terminalStore.shortcutLabel("localShell"), t("footer.localShell")],
+            [terminalStore.shortcutLabel("splitRight"), terminalStore.shortcutLabel("splitDown"), t("footer.split")],
+            [terminalStore.shortcutLabel("close"), t("footer.close")],
+          ].map((parts) => {
+            const label = parts.pop() ?? "";
+            const keys = parts.filter(Boolean).join(" / ");
+            return keys ? `${keys} ${label}` : "";
+          }).filter(Boolean).join(" · ")}</span>
         </footer>
       </main>
 
@@ -824,6 +920,19 @@ export default function TabsApp() {
           </div>
         );
       })()}
+      {tabDrag.overlay}
+      {splitMenu && activeTab && (
+        <SplitMenu
+          direction={splitMenu.direction}
+          onChoose={chooseSplit}
+          onClose={closeSplitMenu}
+          sameLabel={titleOf(activeTab)}
+          serverAddress={serverAddress}
+          servers={savedHosts}
+          x={splitMenu.x}
+          y={splitMenu.y}
+        />
+      )}
       {terminalSnapshot.contextMenu && <TerminalContextMenu key={`${terminalSnapshot.contextMenu.x},${terminalSnapshot.contextMenu.y}`} menu={terminalSnapshot.contextMenu} />}
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} version={appVersion} />}
       {pickerOpen && (

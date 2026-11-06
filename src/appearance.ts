@@ -24,6 +24,7 @@ export const defaultSettings: AppSettings = {
   serverOpenClick: "single",
   snippetInsertClick: "single",
   restoreTabs: false,
+  keybindings: {},
   copyOnSelect: false,
   confirmMultilinePaste: true,
   forceMouseSelection: false,

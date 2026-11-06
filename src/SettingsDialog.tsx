@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DesktopIntegration from "./DesktopIntegration";
+import ShortcutList from "./ShortcutList";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
 import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
 import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
@@ -14,7 +15,7 @@ type SettingsDialogProps = {
   onClose: () => void;
 };
 
-type Section = "general" | "appearances";
+type Section = "general" | "appearances" | "shortcuts";
 
 const colorFields: { key: keyof Pick<Appearance, "foreground" | "background" | "cursor" | "selection" | "tabColor">; label: MessageKey }[] = [
   { key: "foreground", label: "settings.foreground" },
@@ -98,6 +99,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
           <div aria-label={t("settings.sections")} className="settings-sections" role="tablist">
             <button aria-selected={section === "general"} autoFocus className="settings-section-tab" onClick={() => setSection("general")} role="tab" type="button">{t("settings.general")}</button>
             <button aria-selected={section === "appearances"} className="settings-section-tab" onClick={() => setSection("appearances")} role="tab" type="button">{t("settings.designs")}</button>
+            <button aria-selected={section === "shortcuts"} className="settings-section-tab" onClick={() => setSection("shortcuts")} role="tab" type="button">{t("settings.shortcuts")}</button>
           </div>
           {error && <div aria-live="polite" className="editor-notice settings-error">{error}</div>}
         </div>
@@ -175,6 +177,8 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
             </select>
             <DesktopIntegration />
           </div>
+        ) : section === "shortcuts" ? (
+          <ShortcutList keybindings={draft.keybindings} onChange={(keybindings) => setDraft({ ...draft, keybindings })} />
         ) : (
           <div className="settings-panel appearance-layout" role="tabpanel">
             <div className="appearance-list">

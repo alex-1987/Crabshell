@@ -44,12 +44,12 @@ impl PtySession {
             ssh_command(host, port, username, identity_file),
             cols,
             rows,
-            "Could not start OpenSSH. Check that `ssh` is installed.",
+            SSH_MISSING,
         )
     }
 
-    /// Starts the user's login shell ($SHELL, then the passwd entry, then /bin/sh)
-    /// in the home directory.
+    /// Starts the user's login shell ($SHELL, then the passwd entry, then /bin/sh; PowerShell
+    /// on Windows) in the home directory.
     pub(crate) fn open_local_shell(cols: u16, rows: u16) -> Result<(Self, SessionReader), String> {
         validate_size(cols, rows)?;
         Self::spawn(
@@ -163,10 +163,40 @@ fn set_terminal_env(command: &mut CommandBuilder) {
     command.env("COLORTERM", "truecolor");
 }
 
+#[cfg(not(windows))]
+const SSH_MISSING: &str = "Could not start OpenSSH. Check that `ssh` is installed.";
+#[cfg(windows)]
+const SSH_MISSING: &str =
+    "Could not start OpenSSH. Install the OpenSSH client (Settings → System → Optional features).";
+
+/// Unix: the login shell ($SHELL, passwd entry, /bin/sh). Windows: PowerShell 7 (`pwsh`) when
+/// installed, otherwise Windows PowerShell, instead of portable-pty's default `cmd.exe`.
 fn local_shell_command() -> CommandBuilder {
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = CommandBuilder::new(windows_shell());
+        command.arg("-NoLogo");
+        command
+    };
+    #[cfg(not(windows))]
     let mut command = CommandBuilder::new_default_prog();
     set_terminal_env(&mut command);
     command
+}
+
+#[cfg(windows)]
+fn windows_shell() -> std::ffi::OsString {
+    let on_path = |name: &str| {
+        std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|dir| dir.join(name))
+                .find(|candidate| candidate.is_file())
+        })
+    };
+    on_path("pwsh.exe")
+        .or_else(|| on_path("powershell.exe"))
+        .map(|path| path.into_os_string())
+        .unwrap_or_else(|| "powershell.exe".into())
 }
 
 fn ssh_command(

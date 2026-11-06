@@ -4,13 +4,13 @@
 
 # Crabshell
 
-**A local SSH manager and terminal for the Linux desktop.**<br>
+**A local SSH manager and terminal for Linux and Windows.**<br>
 Tabs, saved servers, snippets and a clipboard that also works over SSH, built on the OpenSSH client you already have.
 
 [![Latest release](https://img.shields.io/github/v/release/alex-1987/Crabshell?label=release&color=c7e77a&labelColor=1d211c)](https://github.com/alex-1987/Crabshell/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/alex-1987/Crabshell/total?color=c7e77a&labelColor=1d211c)](https://github.com/alex-1987/Crabshell/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-c7e77a?labelColor=1d211c)](#license)
-[![Platform: Linux](https://img.shields.io/badge/platform-Linux%20x86__64%20%7C%20arm64-c7e77a?labelColor=1d211c)](#installation)
+[![Platform: Linux | Windows](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-c7e77a?labelColor=1d211c)](#installation)
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%99%A5-e98a70?labelColor=1d211c)](https://github.com/sponsors/alex-1987)
 
 [**Download**](https://github.com/alex-1987/Crabshell/releases/latest) · [Installation](#installation) · [Features](#features) · [micro over SSH](#micro-over-ssh) · [Support the project](#support-the-project)
@@ -23,6 +23,7 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 
 - 🔒 **Everything stays on your device.** No cloud, no account, no telemetry. Crabshell runs your system `ssh`, so your keys, `ssh-agent`, `known_hosts` and `~/.ssh/config` just keep working. The app never reads or copies private keys.
 - 🗂️ **Your servers, one click away.** Save hosts with a label, user, port, key and their own color scheme, and open each one in its own tab.
+- 🪟 **Two terminals side by side.** Split a tab left/right or top/bottom, or simply drag one tab onto another tab's terminal. Each half keeps its own session, and you can pull it back into its own tab at any time.
 - 🧩 **Snippets for the commands you keep typing.** Search with `Ctrl+Shift+S` and paste into the active terminal. Nothing is ever sent without you pressing Enter, or `Ctrl+Enter` to paste and run.
 - 📋 **Copy and paste that works over SSH.** Supports OSC 52, so micro, vim/Neovim and tmux on the server can use your local clipboard.
 - 🎨 **Fits your desktop.** Light, dark or system theme, per-server designs, adjustable UI size, English and German.
@@ -44,6 +45,7 @@ All files are on the [**latest release page**](https://github.com/alex-1987/Crab
 | **Fedora, openSUSE, RHEL/Alma/Rocky** | `Crabshell-<version>-1.x86_64.rpm` | `Crabshell-<version>-1.aarch64.rpm` |
 | **Arch Linux, CachyOS, EndeavourOS, Manjaro, Garuda** | `crabshell-<version>-1-x86_64.pkg.tar.zst` | build it yourself ([see below](#building-it-yourself)) |
 | **Anything else** | `Crabshell_<version>_amd64.AppImage` | `Crabshell_<version>_aarch64.AppImage` |
+| **Windows 10/11** | `Crabshell_<version>_x64-setup.exe` (or `.msi`) | – |
 
 The `.deb` and `.rpm` packages need glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 or later). The Arch package is built against current Arch Linux.
 
@@ -116,6 +118,18 @@ An AppImage is a single file you can put anywhere, for example in `~/Application
 
 </details>
 
+<details>
+<summary><b>Windows 10/11</b> (setup .exe)</summary>
+
+1. Download `Crabshell_<version>_x64-setup.exe` from the [latest release](https://github.com/alex-1987/Crabshell/releases/latest) and run it. It installs for your user only, no administrator rights needed, and adds Crabshell to the Start menu.
+2. The installer is **not code-signed** yet. If SmartScreen shows *"Windows protected your PC"*, click **More info → Run anyway**.
+3. Crabshell uses the **OpenSSH client that ships with Windows 10/11**. If `ssh` is missing, add it under *Settings → System → Optional features → OpenSSH Client* (or run `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0` in an administrator PowerShell). Your keys and config live in `%USERPROFILE%\.ssh\` as usual.
+4. Local tabs open **PowerShell** (PowerShell 7 `pwsh` when installed, otherwise Windows PowerShell).
+
+Prefer an MSI (e.g. for deployment)? Use the `.msi` from the same release. Uninstall via *Settings → Apps*. Settings and servers are stored in `%APPDATA%\dev.crabshell.app\`.
+
+</details>
+
 ### Install by clicking
 
 1. Open the [latest release](https://github.com/alex-1987/Crabshell/releases/latest) and download the file for your system from **Assets** (see the table above).
@@ -160,6 +174,8 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Saved server profiles with label, category, host or `~/.ssh/config` alias, user, port (default 22) and private key. Port 22 is not passed to `ssh`, so a `Port` from `~/.ssh/config` still applies to aliases.
 - Categories group the server list (collapsible). Click a category chip above the list to show only those servers; click it again to show all.
 - Every tab has its own SSH session or local shell. Tabs can be reconnected and closed, and you can switch with `Ctrl+Tab`.
+- Split view: show two terminals in one tab, side by side (`Ctrl+Shift+E`) or one above the other (`Ctrl+Shift+O`). The split buttons above the terminal let you choose what the new pane runs: the same server again, a local shell or another saved server. Drag the divider to resize (double-click resets it), switch the layout later, move between panes with a click or `Ctrl+Alt+Arrow`, and close a pane with its × or `Ctrl+Shift+W`.
+- Drag tabs with the mouse: drop them on the tab strip to reorder, or onto the terminal of another tab to put both side by side. The edge you drop on (left, right, top, bottom) decides where it goes; hovering over a tab while dragging brings it to the front. ⇱ in a pane's header moves it back into its own tab. Sessions keep running while you rearrange them.
 - Local shell via `+` or `Ctrl+Shift+T`: your login shell (`$SHELL`) in your home directory.
 - Optionally reopen the tabs from last time on start, or always start with an empty workspace.
 - OpenSSH runs in a real PTY: full-screen programs, colors and resizing work as in any terminal. Sessions are cleaned up when the window closes.
@@ -186,11 +202,15 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 
 ### Shortcuts
 
+These are the defaults. All terminal shortcuts can be changed under **⚙ Settings → Shortcuts**: click **+**, press the new combination, save. Each action can have up to four combinations or none at all. A shortcut needs Ctrl, Alt or Super (or an F key), and Crabshell warns before you take a key that terminal programs need, such as `Ctrl+C`.
+
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+Shift+S` | Search and paste a snippet |
 | `Ctrl+Shift+T` | New local shell |
-| `Ctrl+Shift+W` | Close tab |
+| `Ctrl+Shift+E` / `Ctrl+Shift+O` | Split right / split down (same session) |
+| `Ctrl+Alt+Arrow` | Move to the other pane |
+| `Ctrl+Shift+W` | Close pane (or the tab when it is not split) |
 | `Ctrl+Tab` | Next tab |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste |
 
@@ -203,9 +223,9 @@ Everything is in `~/.config/dev.crabshell.app/`, written atomically, so a crash 
 | `servers.json` | Server profiles (the key is stored as a path only, never its contents) |
 | `settings.json` | Settings and designs |
 | `snippets.json` | Snippets. An unreadable file is moved aside to `snippets.json.broken` instead of breaking the app. |
-| `session.json` | Which tabs were open (tab type and server id only, never terminal contents) |
+| `session.json` | Which tabs and split panes were open (tab type and server id only, never terminal contents) |
 
-Not included yet: split panes, SSH config import, snippet variables, snippet import/export and SFTP.
+Not included yet: more than two panes per tab, SSH config import, snippet variables, snippet import/export and SFTP.
 
 ## micro over SSH
 

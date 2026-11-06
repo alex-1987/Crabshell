@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -81,6 +82,8 @@ pub(crate) struct AppSettings {
     pub snippet_insert_click: String,
     /// Reopen the tabs of the last run on start instead of an empty workspace.
     pub restore_tabs: bool,
+    /// Custom terminal shortcuts: action → key combos (e.g. "Ctrl+Shift+E"). Missing actions use the defaults.
+    pub keybindings: BTreeMap<String, Vec<String>>,
     pub copy_on_select: bool,
     pub confirm_multiline_paste: bool,
     /// Plain mouse drags select text even when a program (e.g. micro) uses the mouse.
@@ -105,6 +108,42 @@ const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
 const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
+/// Same list as KEY_ACTIONS in src/keybindings.ts.
+const KEY_ACTIONS: [&str; 10] = [
+    "copy",
+    "paste",
+    "snippets",
+    "localShell",
+    "close",
+    "nextTab",
+    "previousTab",
+    "splitRight",
+    "splitDown",
+    "otherPane",
+];
+const MAX_BINDINGS_PER_ACTION: usize = 4;
+const MAX_COMBO_LEN: usize = 40;
+
+fn valid_combo(combo: &str) -> bool {
+    !combo.is_empty() && combo.len() <= MAX_COMBO_LEN && !combo.chars().any(char::is_control)
+}
+
+fn valid_keybindings(bindings: &BTreeMap<String, Vec<String>>) -> bool {
+    bindings.iter().all(|(action, combos)| {
+        KEY_ACTIONS.contains(&action.as_str())
+            && combos.len() <= MAX_BINDINGS_PER_ACTION
+            && combos.iter().all(|combo| valid_combo(combo))
+    })
+}
+
+/// Drops unknown actions and invalid combos from an older or hand-edited settings file.
+fn normalize_keybindings(bindings: &mut BTreeMap<String, Vec<String>>) {
+    bindings.retain(|action, _| KEY_ACTIONS.contains(&action.as_str()));
+    for combos in bindings.values_mut() {
+        combos.retain(|combo| valid_combo(combo));
+        combos.truncate(MAX_BINDINGS_PER_ACTION);
+    }
+}
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 
 impl Default for AppSettings {
@@ -117,6 +156,7 @@ impl Default for AppSettings {
             server_open_click: "single".to_string(),
             snippet_insert_click: "single".to_string(),
             restore_tabs: false,
+            keybindings: BTreeMap::new(),
             copy_on_select: false,
             confirm_multiline_paste: true,
             force_mouse_selection: false,
@@ -139,6 +179,10 @@ pub(crate) struct SessionTab {
     /// "local" or "ssh".
     pub kind: String,
     pub server_id: String,
+    /// Second pane of a split tab: "" (not split), "row" (side by side) or "column" (stacked).
+    pub split_direction: String,
+    pub split_kind: String,
+    pub split_server_id: String,
 }
 
 /// Tabs that were open when Crabshell was last used (session.json).
@@ -149,12 +193,21 @@ pub(crate) struct SessionState {
     pub active_index: usize,
 }
 
-fn valid_session_tab(tab: &SessionTab) -> bool {
-    match tab.kind.as_str() {
-        "local" => tab.server_id.is_empty(),
-        "ssh" => !tab.server_id.is_empty() && tab.server_id.len() <= 128,
+fn valid_session_pane(kind: &str, server_id: &str) -> bool {
+    match kind {
+        "local" => server_id.is_empty(),
+        "ssh" => !server_id.is_empty() && server_id.len() <= 128,
         _ => false,
     }
+}
+
+fn valid_session_tab(tab: &SessionTab) -> bool {
+    let split_ok = match tab.split_direction.as_str() {
+        "" => tab.split_kind.is_empty() && tab.split_server_id.is_empty(),
+        "row" | "column" => valid_session_pane(&tab.split_kind, &tab.split_server_id),
+        _ => false,
+    };
+    valid_session_pane(&tab.kind, &tab.server_id) && split_ok
 }
 
 fn normalize_session(mut session: SessionState) -> SessionState {
@@ -220,6 +273,7 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     if !CLICK_MODES.contains(&settings.snippet_insert_click.as_str()) {
         settings.snippet_insert_click = AppSettings::default().snippet_insert_click;
     }
+    normalize_keybindings(&mut settings.keybindings);
     // A missing or broken session file just means "nothing to restore".
     let session = read_json::<SessionState>(&config_dir.join(SESSION_FILE))
         .ok()
@@ -261,6 +315,9 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
         || !CLICK_MODES.contains(&settings.snippet_insert_click.as_str())
     {
         return Err("Unknown click mode".to_string());
+    }
+    if !valid_keybindings(&settings.keybindings) {
+        return Err("Invalid keyboard shortcut".to_string());
     }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         return Err("The UI scale is outside the supported range".to_string());
@@ -547,11 +604,12 @@ mod tests {
             vec![
                 SessionTab {
                     kind: "local".into(),
-                    server_id: String::new()
+                    ..SessionTab::default()
                 },
                 SessionTab {
                     kind: "ssh".into(),
-                    server_id: "a".into()
+                    server_id: "a".into(),
+                    ..SessionTab::default()
                 },
             ]
         );
@@ -564,5 +622,43 @@ mod tests {
         assert_eq!(settings.server_open_click, "single");
         assert_eq!(settings.snippet_insert_click, "single");
         assert!(!settings.restore_tabs);
+    }
+
+    #[test]
+    fn session_keeps_valid_splits_only() {
+        let session: SessionState = serde_json::from_str(
+            r#"{"tabs":[
+                {"kind":"ssh","serverId":"a","splitDirection":"row","splitKind":"local"},
+                {"kind":"local","splitDirection":"column","splitKind":"ssh","splitServerId":"b"},
+                {"kind":"local","splitDirection":"diagonal","splitKind":"local"},
+                {"kind":"local","splitDirection":"row","splitKind":"ssh"}
+            ]}"#,
+        )
+        .unwrap();
+        let session = normalize_session(session);
+        assert_eq!(session.tabs.len(), 2);
+        assert_eq!(session.tabs[0].split_direction, "row");
+        assert_eq!(session.tabs[1].split_server_id, "b");
+    }
+
+    #[test]
+    fn keybindings_drop_unknown_actions_and_bad_combos() {
+        use std::collections::BTreeMap;
+        let mut bindings = BTreeMap::new();
+        bindings.insert(
+            "copy".to_string(),
+            vec!["Ctrl+Shift+K".to_string(), String::new()],
+        );
+        bindings.insert("launchRockets".to_string(), vec!["Ctrl+R".to_string()]);
+        bindings.insert("close".to_string(), vec![]);
+        assert!(!super::valid_keybindings(&bindings));
+        super::normalize_keybindings(&mut bindings);
+        assert!(super::valid_keybindings(&bindings));
+        assert_eq!(
+            bindings.get("copy").unwrap(),
+            &vec!["Ctrl+Shift+K".to_string()]
+        );
+        assert!(bindings.get("close").unwrap().is_empty());
+        assert!(!bindings.contains_key("launchRockets"));
     }
 }
