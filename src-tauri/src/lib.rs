@@ -12,7 +12,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use session::{validate_session_id, OpenSshSession, SshSession};
+use session::{validate_session_id, PtySession, SessionReader, TerminalSession};
 use tauri::{ipc::InvokeResponseBody, Manager};
 
 #[tauri::command]
@@ -30,13 +30,31 @@ fn save_settings(app: tauri::AppHandle, settings: storage::AppSettings) -> Resul
     storage::save_settings(&app, &settings)
 }
 
+/// The user's message locale, following the POSIX lookup order
+/// (LANGUAGE, LC_ALL, LC_MESSAGES, LANG). Returns None for unset or "C"/"POSIX".
+#[tauri::command]
+fn system_locale() -> Option<String> {
+    locale_from(|name| std::env::var(name).ok())
+}
+
+fn locale_from(get: impl Fn(&str) -> Option<String>) -> Option<String> {
+    ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
+        .into_iter()
+        .filter_map(get)
+        // LANGUAGE is a colon-separated priority list.
+        .filter_map(|value| value.split(':').next().map(str::to_string))
+        .find(|value| {
+            !value.is_empty() && value != "C" && value != "POSIX" && !value.starts_with("C.")
+        })
+}
+
 #[derive(Default)]
 struct AppState {
     sessions: Mutex<HashMap<String, SessionEntry>>,
 }
 
 struct SessionEntry {
-    session: Arc<Mutex<Box<dyn SshSession>>>,
+    session: Arc<Mutex<Box<dyn TerminalSession>>>,
     on_state: tauri::ipc::Channel<SessionEvent>,
     stopping: Arc<AtomicBool>,
 }
@@ -48,6 +66,14 @@ struct ConnectRequest {
     host: String,
     username: Option<String>,
     identity_file: Option<String>,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalShellRequest {
+    session_id: String,
     cols: u16,
     rows: u16,
 }
@@ -86,7 +112,7 @@ fn close_entry_session(entry: &SessionEntry) -> Result<(), String> {
     let mut session = entry
         .session
         .lock()
-        .map_err(|_| "The SSH session is unavailable".to_string())?;
+        .map_err(|_| "The session is unavailable".to_string())?;
     session.close()
 }
 
@@ -98,7 +124,52 @@ fn connect_host(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    validate_session_id(&request.session_id)?;
+    start_session(
+        request.session_id,
+        || {
+            PtySession::connect_ssh(
+                &request.host,
+                request.username.as_deref(),
+                request.identity_file.as_deref(),
+                request.cols,
+                request.rows,
+            )
+        },
+        on_data,
+        on_state,
+        app,
+        state,
+    )
+}
+
+#[tauri::command]
+fn open_local_shell(
+    request: LocalShellRequest,
+    on_data: tauri::ipc::Channel<InvokeResponseBody>,
+    on_state: tauri::ipc::Channel<SessionEvent>,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    start_session(
+        request.session_id,
+        || PtySession::open_local_shell(request.cols, request.rows),
+        on_data,
+        on_state,
+        app,
+        state,
+    )
+}
+
+/// Registers a freshly spawned terminal process and streams its output until it ends.
+fn start_session(
+    session_id: String,
+    spawn: impl FnOnce() -> Result<(PtySession, SessionReader), String>,
+    on_data: tauri::ipc::Channel<InvokeResponseBody>,
+    on_state: tauri::ipc::Channel<SessionEvent>,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    validate_session_id(&session_id)?;
     on_state
         .send(SessionEvent::Connecting)
         .map_err(|_| "The terminal view is unavailable".to_string())?;
@@ -108,18 +179,12 @@ fn connect_host(
             .sessions
             .lock()
             .map_err(|_| "The session manager is unavailable".to_string())?;
-        if sessions.contains_key(&request.session_id) {
+        if sessions.contains_key(&session_id) {
             return Err("This session is already open".to_string());
         }
     }
 
-    let (session, mut reader) = match OpenSshSession::connect(
-        &request.host,
-        request.username.as_deref(),
-        request.identity_file.as_deref(),
-        request.cols,
-        request.rows,
-    ) {
+    let (session, mut reader) = match spawn() {
         Ok(result) => result,
         Err(message) => {
             let _ = on_state.send(SessionEvent::Failed {
@@ -129,7 +194,7 @@ fn connect_host(
         }
     };
 
-    let session: Arc<Mutex<Box<dyn SshSession>>> = Arc::new(Mutex::new(Box::new(session)));
+    let session: Arc<Mutex<Box<dyn TerminalSession>>> = Arc::new(Mutex::new(Box::new(session)));
     let stopping = Arc::new(AtomicBool::new(false));
     let entry = SessionEntry {
         session: Arc::clone(&session),
@@ -142,10 +207,10 @@ fn connect_host(
             .sessions
             .lock()
             .map_err(|_| "The session manager is unavailable".to_string())?;
-        if sessions.contains_key(&request.session_id) {
+        if sessions.contains_key(&session_id) {
             false
         } else {
-            sessions.insert(request.session_id.clone(), entry);
+            sessions.insert(session_id.clone(), entry);
             true
         }
     };
@@ -161,19 +226,18 @@ fn connect_host(
     let _ = on_state.send(SessionEvent::Connected);
 
     let app_handle = app.clone();
-    let session_id = request.session_id;
     let worker_session_id = session_id.clone();
     let worker_session = Arc::clone(&session);
     let worker_stopping = Arc::clone(&stopping);
     let worker_state = on_state.clone();
 
     if thread::Builder::new()
-        .name("crabshell-ssh-reader".to_string())
+        .name("crabshell-pty-reader".to_string())
         .spawn(move || {
             let mut buffer = [0_u8; 8192];
             let message = loop {
                 match reader.read(&mut buffer) {
-                    Ok(0) => break "The SSH process ended".to_string(),
+                    Ok(0) => break "The session ended".to_string(),
                     Ok(count) => {
                         if on_data
                             .send(InvokeResponseBody::Raw(buffer[..count].to_vec()))
@@ -183,7 +247,7 @@ fn connect_host(
                         }
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(_) => break "The SSH terminal stream ended".to_string(),
+                    Err(_) => break "The terminal stream ended".to_string(),
                 }
             };
 
@@ -220,7 +284,7 @@ fn connect_host(
 fn finish_session(
     app_handle: &tauri::AppHandle,
     session_id: &str,
-    session: &Arc<Mutex<Box<dyn SshSession>>>,
+    session: &Arc<Mutex<Box<dyn TerminalSession>>>,
     stopping: &AtomicBool,
     on_state: &tauri::ipc::Channel<SessionEvent>,
     message: String,
@@ -274,12 +338,12 @@ fn write_to_session(
         sessions
             .get(session_id)
             .map(|entry| Arc::clone(&entry.session))
-            .ok_or_else(|| "The SSH session is not open".to_string())?
+            .ok_or_else(|| "The session is not open".to_string())?
     };
 
     let mut session = session
         .lock()
-        .map_err(|_| "The SSH session is unavailable".to_string())?;
+        .map_err(|_| "The session is unavailable".to_string())?;
     session.write(data)
 }
 
@@ -299,12 +363,12 @@ fn resize_session(
         sessions
             .get(&session_id)
             .map(|entry| Arc::clone(&entry.session))
-            .ok_or_else(|| "The SSH session is not open".to_string())?
+            .ok_or_else(|| "The session is not open".to_string())?
     };
 
     let session = session
         .lock()
-        .map_err(|_| "The SSH session is unavailable".to_string())?;
+        .map_err(|_| "The session is unavailable".to_string())?;
     session.resize(cols, rows)
 }
 
@@ -344,9 +408,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             load_persistent_data,
+            system_locale,
             save_servers,
             save_settings,
             connect_host,
+            open_local_shell,
             write_to_session,
             resize_session,
             close_session
@@ -358,4 +424,44 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .run(tauri::generate_context!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::locale_from;
+    use std::collections::HashMap;
+
+    fn lookup(vars: &[(&str, &str)]) -> Option<String> {
+        let vars: HashMap<String, String> = vars
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        locale_from(|name| vars.get(name).cloned())
+    }
+
+    #[test]
+    fn follows_posix_locale_priority() {
+        assert_eq!(
+            lookup(&[("LANG", "de_DE.UTF-8")]).as_deref(),
+            Some("de_DE.UTF-8")
+        );
+        assert_eq!(
+            lookup(&[("LANG", "en_US.UTF-8"), ("LC_MESSAGES", "de_AT.UTF-8")]).as_deref(),
+            Some("de_AT.UTF-8")
+        );
+        assert_eq!(
+            lookup(&[("LANG", "en_US.UTF-8"), ("LANGUAGE", "de:en")]).as_deref(),
+            Some("de")
+        );
+    }
+
+    #[test]
+    fn ignores_neutral_locales() {
+        assert_eq!(
+            lookup(&[("LC_ALL", "C"), ("LANG", "de_DE.UTF-8")]).as_deref(),
+            Some("de_DE.UTF-8")
+        );
+        assert_eq!(lookup(&[("LANG", "C.UTF-8")]), None);
+        assert_eq!(lookup(&[]), None);
+    }
 }

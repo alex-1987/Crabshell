@@ -549,3 +549,5 @@ select option:checked { color: var(--c-192016); background: var(--acid); }
 .range-row { display: flex; align-items: center; gap: 12px; }
 .range-row .range-input { flex: 1; }
 .text-action:disabled { cursor: default; opacity: 0.4; }
+
+.tab-kind-local { flex: 0 0 auto; color: var(--tab-color, var(--acid)); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 9px; font-weight: 700; }

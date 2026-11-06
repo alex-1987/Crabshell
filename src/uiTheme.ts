@@ -1,15 +1,14 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
+import { t } from "./i18n";
 import type { ThemeMode } from "./terminalTypes";
 
 export const UI_SCALE_MIN = 80;
 export const UI_SCALE_MAX = 150;
 
-export const themeModeLabels: Record<ThemeMode, string> = {
-  system: "Automatisch (System)",
-  light: "Hell",
-  dark: "Dunkel",
-};
+export function themeModeLabel(mode: ThemeMode): string {
+  return t(`theme.${mode}`);
+}
 
 /** Order used by the quick toggle in the top bar. */
 export const themeModeCycle: ThemeMode[] = ["system", "light", "dark"];

@@ -1,27 +1,29 @@
 import { useState } from "react";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
 import type { AppSettings, Appearance, SavedHost, ThemeMode } from "./terminalTypes";
-import { themeModeCycle, themeModeLabels, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
+import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
+import { themeModeCycle, themeModeLabel, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
 
 type SettingsDialogProps = {
   settings: AppSettings;
   servers: SavedHost[];
   initialAppearanceId?: string;
+  systemLocale: string | null;
   onSave: (settings: AppSettings) => Promise<void>;
   onClose: () => void;
 };
 
 type Section = "general" | "appearances";
 
-const colorFields: { key: keyof Pick<Appearance, "foreground" | "background" | "cursor" | "selection" | "tabColor">; label: string }[] = [
-  { key: "foreground", label: "Schriftfarbe" },
-  { key: "background", label: "Hintergrund" },
-  { key: "cursor", label: "Cursor" },
-  { key: "selection", label: "Markierung" },
-  { key: "tabColor", label: "Tab-Farbe" },
+const colorFields: { key: keyof Pick<Appearance, "foreground" | "background" | "cursor" | "selection" | "tabColor">; label: MessageKey }[] = [
+  { key: "foreground", label: "settings.foreground" },
+  { key: "background", label: "settings.background" },
+  { key: "cursor", label: "settings.cursor" },
+  { key: "selection", label: "settings.selection" },
+  { key: "tabColor", label: "settings.tabColor" },
 ];
 
-export default function SettingsDialog({ settings, servers, initialAppearanceId, onSave, onClose }: SettingsDialogProps) {
+export default function SettingsDialog({ settings, servers, initialAppearanceId, systemLocale, onSave, onClose }: SettingsDialogProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [section, setSection] = useState<Section>(initialAppearanceId ? "appearances" : "general");
   const [selectedId, setSelectedId] = useState(initialAppearanceId ?? settings.defaultAppearanceId);
@@ -51,13 +53,14 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
       ...current,
       appearances: remaining,
       defaultAppearanceId: current.defaultAppearanceId === selected.id ? DEFAULT_APPEARANCE_ID : current.defaultAppearanceId,
+      localAppearanceId: current.localAppearanceId === selected.id ? "" : current.localAppearanceId,
     }));
     setSelectedId(DEFAULT_APPEARANCE_ID);
   }
 
   async function save() {
     if (nameInvalid) {
-      setError("Jedes Design braucht einen Namen.");
+      setError(t("settings.nameRequired"));
       return;
     }
     setSaving(true);
@@ -67,54 +70,65 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
         appearances: draft.appearances.map((item) => ({ ...item, name: item.name.trim() })),
       });
     } catch (saveError) {
-      setError(`Einstellungen konnten nicht gespeichert werden: ${String(saveError)}`);
+      setError(t("notice.saveSettingsFailed", { error: translateBackend(saveError) }));
       setSaving(false);
     }
   }
 
-  const usedBy = servers.filter((server) =>
-    server.appearanceId ? server.appearanceId === selected.id : selected.id === draft.defaultAppearanceId,
-  );
+  const usedBy = servers
+    .filter((server) => server.appearanceId ? server.appearanceId === selected.id : selected.id === draft.defaultAppearanceId)
+    .map((server) => server.label || server.host);
+  if ((draft.localAppearanceId || draft.defaultAppearanceId) === selected.id) usedBy.unshift(t("settings.localShells"));
 
   return (
     <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") onClose(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
       <section aria-labelledby="settings-title" aria-modal="true" className="server-dialog settings-dialog" role="dialog">
         <header className="dialog-heading">
-          <div><div className="page-eyebrow">CRABSHELL</div><h2 id="settings-title">Einstellungen</h2></div>
-          <button aria-label="Einstellungen schließen" className="icon-button" onClick={onClose} type="button">×</button>
+          <div><div className="page-eyebrow">CRABSHELL</div><h2 id="settings-title">{t("settings.title")}</h2></div>
+          <button aria-label={t("settings.close")} className="icon-button" onClick={onClose} type="button">×</button>
         </header>
 
-        <div aria-label="Einstellungsbereiche" className="settings-sections" role="tablist">
-          <button aria-selected={section === "general"} autoFocus className="settings-section-tab" onClick={() => setSection("general")} role="tab" type="button">Allgemein</button>
-          <button aria-selected={section === "appearances"} className="settings-section-tab" onClick={() => setSection("appearances")} role="tab" type="button">Designs</button>
+        <div aria-label={t("settings.sections")} className="settings-sections" role="tablist">
+          <button aria-selected={section === "general"} autoFocus className="settings-section-tab" onClick={() => setSection("general")} role="tab" type="button">{t("settings.general")}</button>
+          <button aria-selected={section === "appearances"} className="settings-section-tab" onClick={() => setSection("appearances")} role="tab" type="button">{t("settings.designs")}</button>
         </div>
 
         {section === "general" ? (
           <div className="settings-panel" role="tabpanel">
-            <h3>Darstellung</h3>
-            <label className="field-label" htmlFor="theme-mode">Farbschema</label>
-            <select id="theme-mode" onChange={(event) => setDraft({ ...draft, themeMode: event.target.value as ThemeMode })} value={draft.themeMode}>
-              {themeModeCycle.map((mode) => <option key={mode} value={mode}>{themeModeLabels[mode]}</option>)}
+            <h3>{t("settings.display")}</h3>
+            <label className="field-label" htmlFor="language">{t("settings.language")}</label>
+            <select id="language" onChange={(event) => setDraft({ ...draft, language: event.target.value as LanguageSetting })} value={draft.language}>
+              <option value="system">{t("settings.languageSystem", { name: languageNames[languageFromLocale(systemLocale) ?? languageFromLocale(navigator.language) ?? "en"] })}</option>
+              {languages.map((language) => <option key={language} value={language}>{languageNames[language]}</option>)}
             </select>
-            <label className="field-label" htmlFor="ui-scale">Textgröße der Oberfläche <span>{draft.uiScale} %</span></label>
+            <label className="field-label" htmlFor="theme-mode">{t("settings.colorScheme")}</label>
+            <select id="theme-mode" onChange={(event) => setDraft({ ...draft, themeMode: event.target.value as ThemeMode })} value={draft.themeMode}>
+              {themeModeCycle.map((mode) => <option key={mode} value={mode}>{themeModeLabel(mode)}</option>)}
+            </select>
+            <label className="field-label" htmlFor="ui-scale">{t("settings.uiScale")} <span>{draft.uiScale} %</span></label>
             <div className="range-row">
               <input className="range-input" id="ui-scale" max={UI_SCALE_MAX} min={UI_SCALE_MIN} onChange={(event) => setDraft({ ...draft, uiScale: Number(event.target.value) })} step={5} type="range" value={draft.uiScale} />
-              <button className="text-action" disabled={draft.uiScale === 100} onClick={() => setDraft({ ...draft, uiScale: 100 })} type="button">Zurücksetzen</button>
+              <button className="text-action" disabled={draft.uiScale === 100} onClick={() => setDraft({ ...draft, uiScale: 100 })} type="button">{t("settings.reset")}</button>
             </div>
-            <div className="form-footnote">Betrifft Seitenleiste, Tabs, Leisten und Dialoge. Die Schriftgröße im Terminal wird pro Design eingestellt.</div>
-            <h3>Zwischenablage</h3>
+            <div className="form-footnote">{t("settings.uiScaleHint")}</div>
+            <h3>{t("settings.clipboard")}</h3>
             <label className="sidebar-setting">
               <input checked={draft.copyOnSelect} onChange={(event) => setDraft({ ...draft, copyOnSelect: event.target.checked })} type="checkbox" />
-              <span>Beim Markieren kopieren</span>
+              <span>{t("settings.copyOnSelect")}</span>
             </label>
             <label className="sidebar-setting">
               <input checked={draft.confirmMultilinePaste} onChange={(event) => setDraft({ ...draft, confirmMultilinePaste: event.target.checked })} type="checkbox" />
-              <span>Mehrzeiliges Einfügen bestätigen</span>
+              <span>{t("settings.confirmPaste")}</span>
             </label>
-            <h3>Standard-Design</h3>
-            <label className="field-label" htmlFor="default-appearance">Für Server ohne eigenes Design und neue Tabs</label>
+            <h3>{t("settings.designs")}</h3>
+            <label className="field-label" htmlFor="default-appearance">{t("settings.defaultDesign")}</label>
             <select id="default-appearance" onChange={(event) => setDraft({ ...draft, defaultAppearanceId: event.target.value })} value={draft.defaultAppearanceId}>
-              {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || "Ohne Namen"}</option>)}
+              {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
+            </select>
+            <label className="field-label" htmlFor="local-appearance">{t("settings.localDesign")}</label>
+            <select id="local-appearance" onChange={(event) => setDraft({ ...draft, localAppearanceId: event.target.value })} value={draft.localAppearanceId}>
+              <option value="">{t("settings.defaultDesignOption")}</option>
+              {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
             </select>
           </div>
         ) : (
@@ -123,43 +137,43 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               {draft.appearances.map((item) => (
                 <button aria-pressed={item.id === selected.id} className="appearance-item" key={item.id} onClick={() => setSelectedId(item.id)} type="button">
                   <span className="appearance-swatch" style={{ background: item.background, color: item.foreground, borderColor: item.tabColor }}>A</span>
-                  <span className="appearance-item-name">{item.name || "Ohne Namen"}</span>
-                  {item.id === draft.defaultAppearanceId && <span className="appearance-badge">Standard</span>}
+                  <span className="appearance-item-name">{item.name || t("settings.unnamed")}</span>
+                  {item.id === draft.defaultAppearanceId && <span className="appearance-badge">{t("settings.defaultBadge")}</span>}
                 </button>
               ))}
-              <button className="button button-secondary" onClick={() => addAppearance(selected, `${selected.name} Kopie`)} type="button">Duplizieren</button>
-              <button className="button button-secondary" onClick={() => addAppearance(draft.appearances[0], "Neues Design")} type="button">+ Neues Design</button>
+              <button className="button button-secondary" onClick={() => addAppearance(selected, t("settings.copySuffix", { name: selected.name }))} type="button">{t("settings.duplicate")}</button>
+              <button className="button button-secondary" onClick={() => addAppearance(draft.appearances[0], t("settings.newDesign"))} type="button">{t("settings.addDesign")}</button>
             </div>
 
             <div className="appearance-editor">
-              <label className="field-label" htmlFor="appearance-name">Name</label>
+              <label className="field-label" htmlFor="appearance-name">{t("settings.name")}</label>
               <input autoComplete="off" id="appearance-name" maxLength={64} onChange={(event) => updateAppearance({ name: event.target.value })} value={selected.name} />
 
               <div className="color-grid">
                 {colorFields.map((field) => (
                   <label className="color-field" key={field.key}>
                     <input onChange={(event) => updateAppearance({ [field.key]: event.target.value })} type="color" value={selected[field.key]} />
-                    <span>{field.label}</span>
+                    <span>{t(field.label)}</span>
                     <code>{selected[field.key]}</code>
                   </label>
                 ))}
               </div>
 
-              <label className="field-label" htmlFor="appearance-font-size">Schriftgröße <span>{selected.fontSize} px</span></label>
+              <label className="field-label" htmlFor="appearance-font-size">{t("settings.fontSize")} <span>{selected.fontSize} px</span></label>
               <input className="range-input" id="appearance-font-size" max={MAX_FONT_SIZE} min={MIN_FONT_SIZE} onChange={(event) => updateAppearance({ fontSize: Number(event.target.value) })} type="range" value={selected.fontSize} />
 
               <div className="appearance-preview" style={{ background: selected.background, color: selected.foreground, fontSize: `${selected.fontSize}px`, borderTopColor: selected.tabColor }}>
                 <div>admin@server:~$ ls -la</div>
-                <div><span style={{ background: `${selected.selection}88` }}>markierter Text</span> normaler Text</div>
+                <div><span style={{ background: `${selected.selection}88` }}>{t("settings.previewSelected")}</span> {t("settings.previewNormal")}</div>
                 <div>admin@server:~$ <span className="appearance-preview-cursor" style={{ background: selected.cursor }} /></div>
               </div>
 
               <div className="form-footnote">
-                {usedBy.length === 0 ? "Von keinem Server verwendet." : `Verwendet von: ${usedBy.map((server) => server.label || server.host).join(", ")}`}
-                {" "}Das Design wird im Server-Dialog pro Profil zugewiesen.
+                {usedBy.length === 0 ? t("settings.unused") : t("settings.usedBy", { names: usedBy.join(", ") })}
+                {" "}{t("settings.assignHint")}
               </div>
               {selected.id !== DEFAULT_APPEARANCE_ID && (
-                <button className="text-action text-danger" onClick={removeAppearance} type="button">Design löschen</button>
+                <button className="text-action text-danger" onClick={removeAppearance} type="button">{t("settings.deleteDesign")}</button>
               )}
             </div>
           </div>
@@ -167,8 +181,8 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
 
         {error && <div aria-live="polite" className="editor-notice">{error}</div>}
         <div className="editor-actions">
-          <button className="button button-secondary" onClick={onClose} type="button">Abbrechen</button>
-          <button className="button button-primary" disabled={saving} onClick={() => void save()} type="button">Speichern</button>
+          <button className="button button-secondary" onClick={onClose} type="button">{t("common.cancel")}</button>
+          <button className="button button-primary" disabled={saving} onClick={() => void save()} type="button">{t("common.save")}</button>
         </div>
       </section>
     </div>

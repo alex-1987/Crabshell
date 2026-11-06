@@ -5,7 +5,8 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, 
 import { defaultSettings } from "./appearance";
 import SettingsDialog from "./SettingsDialog";
 import TerminalPane from "./TerminalPane";
-import { themeModeCycle, themeModeLabels, useUiTheme } from "./uiTheme";
+import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
+import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { terminalStore } from "./terminalStore";
 import type { AppSettings, SavedHost, SessionStatus, TerminalTab } from "./terminalTypes";
 import "./styles.css";
@@ -15,13 +16,13 @@ const LEGACY_HOST_STORAGE_KEY = "crabshell.saved-host.v1";
 const SIDEBAR_WIDTH_KEY = "crabshell.sidebar-width.v1";
 const SIDEBAR_COLLAPSED_KEY = "crabshell.sidebar-collapsed.v1";
 
-const statusLabels: Record<SessionStatus, string> = {
-  disconnected: "Getrennt",
-  connecting: "Verbinde",
-  connected: "Verbunden",
-  disconnecting: "Trenne",
-  failed: "Verbindungsfehler",
-};
+function statusLabel(status: SessionStatus): string {
+  return t(`status.${status}`);
+}
+
+function titleOf(tab: TerminalTab): string {
+  return tab.kind === "local" ? t("tabs.localShell") : tab.title;
+}
 
 type PersistentData = {
   servers: SavedHost[];
@@ -102,6 +103,13 @@ export default function TabsApp() {
   const resizingSidebarRef = useRef(false);
   sidebarWidthRef.current = sidebarWidth;
 
+  const [systemLocale, setSystemLocale] = useState<string | null>(null);
+  useEffect(() => {
+    void invoke<string | null>("system_locale").then(setSystemLocale).catch(() => undefined);
+  }, []);
+  // Set synchronously during render so every t() call below (and in children) uses it.
+  setLanguage(resolveLanguage(appSettings.language, systemLocale));
+
   useUiTheme(appSettings.themeMode, appSettings.uiScale);
 
   const terminalSnapshot = useSyncExternalStore(terminalStore.subscribe, terminalStore.getSnapshot);
@@ -127,14 +135,14 @@ export default function TabsApp() {
         sidebarWidthRef.current = nextSettings.sidebarWidth;
         settingsRef.current = nextSettings;
         terminalStore.setClipboardPreferences(nextSettings);
-        terminalStore.setAppearances(nextSettings.appearances, nextSettings.defaultAppearanceId);
+        terminalStore.setAppearances(nextSettings.appearances, nextSettings.defaultAppearanceId, nextSettings.localAppearanceId);
         localStorage.removeItem(HOSTS_STORAGE_KEY);
         localStorage.removeItem(LEGACY_HOST_STORAGE_KEY);
         localStorage.removeItem(SIDEBAR_WIDTH_KEY);
         localStorage.removeItem(SIDEBAR_COLLAPSED_KEY);
         setStorageError("");
       } catch (error) {
-        if (mounted) setStorageError(`Lokale Daten konnten nicht geladen werden: ${String(error)}`);
+        if (mounted) setStorageError(t("notice.loadFailed", { error: translateBackend(error) }));
       } finally {
         if (mounted) setStorageReady(true);
       }
@@ -162,7 +170,7 @@ export default function TabsApp() {
     if (!storageReady || storageError) return;
     const savedHost = host.trim();
     if (!savedHost) {
-      setSidebarNotice("Bitte zuerst einen Hostnamen oder SSH-Alias eingeben.");
+      setSidebarNotice(t("notice.enterHost"));
       return;
     }
 
@@ -183,10 +191,10 @@ export default function TabsApp() {
       await invoke("save_servers", { servers: nextServers });
       setSavedHosts(nextServers);
       terminalStore.updateServers(nextServers);
-      setSidebarNotice(editingId ? "Server aktualisiert." : "Server gespeichert.");
+      setSidebarNotice(editingId ? t("notice.serverUpdated") : t("notice.serverSaved"));
       setEditorOpen(false);
     } catch (error) {
-      setStorageError(`Serverprofile konnten nicht gespeichert werden: ${String(error)}`);
+      setStorageError(t("notice.saveServersFailed", { error: translateBackend(error) }));
     }
   }
 
@@ -197,9 +205,9 @@ export default function TabsApp() {
       await invoke("save_servers", { servers: nextServers });
       setSavedHosts(nextServers);
       setConfirmDeleteId(null);
-      setSidebarNotice("Server entfernt.");
+      setSidebarNotice(t("notice.serverRemoved"));
     } catch (error) {
-      setStorageError(`Serverprofile konnten nicht gespeichert werden: ${String(error)}`);
+      setStorageError(t("notice.saveServersFailed", { error: translateBackend(error) }));
     }
   }
 
@@ -209,23 +217,17 @@ export default function TabsApp() {
         multiple: false,
         directory: false,
         defaultPath: await join(await homeDir(), ".ssh"),
-        title: "Privaten SSH-Schlüssel auswählen",
+        title: t("server.pickKeyTitle"),
       });
       if (typeof selected === "string") setIdentityFile(selected);
     } catch (error) {
-      setSidebarNotice(`Dateiauswahl fehlgeschlagen: ${String(error)}`);
+      setSidebarNotice(t("notice.filePickerFailed", { error: translateBackend(error) }));
     }
   }
 
   function openServer(server: SavedHost) {
     if (!storageReady || storageError) return;
-    const selectedTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.activeTabId);
-    if (selectedTab && !selectedTab.server && selectedTab.status === "disconnected") {
-      void terminalStore.connect(selectedTab.id, server);
-      return;
-    }
-    const tabId = terminalStore.createTab(server);
-    void terminalStore.connect(tabId);
+    terminalStore.openServer(server);
   }
 
   function applySettings(settings: AppSettings): AppSettings {
@@ -233,14 +235,14 @@ export default function TabsApp() {
     settingsRef.current = normalized;
     setAppSettings(normalized);
     terminalStore.setClipboardPreferences(normalized);
-    terminalStore.setAppearances(normalized.appearances, normalized.defaultAppearanceId);
+    terminalStore.setAppearances(normalized.appearances, normalized.defaultAppearanceId, normalized.localAppearanceId);
     return normalized;
   }
 
   function persistSettings(settings: AppSettings) {
     const normalized = applySettings(settings);
     void invoke("save_settings", { settings: normalized }).catch((error: unknown) => {
-      setStorageError(`Einstellungen konnten nicht gespeichert werden: ${String(error)}`);
+      setStorageError(t("notice.saveSettingsFailed", { error: translateBackend(error) }));
     });
   }
 
@@ -294,44 +296,44 @@ export default function TabsApp() {
                 <div className="brand-mark" aria-hidden="true"><span /></div>
                 <div><div className="brand-name">crabshell</div><div className="brand-caption">LOCAL SSH WORKSPACE</div></div>
               </div>
-              <button aria-label="Serverleiste ausblenden" className="icon-button sidebar-toggle" disabled={!storageReady} onClick={toggleSidebar} title="Serverleiste ausblenden" type="button"><span aria-hidden="true">‹</span></button>
+              <button aria-label={t("sidebar.hide")} className="icon-button sidebar-toggle" disabled={!storageReady} onClick={toggleSidebar} title={t("sidebar.hide")} type="button"><span aria-hidden="true">‹</span></button>
             </div>
-            <div className="privacy-line"><span className="privacy-indicator" /><span>Nur auf diesem Gerät</span></div>
+            <div className="privacy-line"><span className="privacy-indicator" /><span>{t("sidebar.privacy")}</span></div>
             <div className="server-list-heading">
-              <div><h1>Server</h1><span>{savedHosts.length}</span></div>
-              <button aria-label="Neuen Server hinzufügen" className="icon-button add-server-button" disabled={!storageReady || Boolean(storageError)} onClick={() => openEditor()} title="Neuen Server hinzufügen" type="button"><span aria-hidden="true">+</span></button>
+              <div><h1>{t("sidebar.servers")}</h1><span>{savedHosts.length}</span></div>
+              <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!storageReady || Boolean(storageError)} onClick={() => openEditor()} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
             </div>
             {sidebarNotice && <div aria-live="polite" className="page-notice">{sidebarNotice}</div>}
-            <nav aria-label="Gespeicherte Server" className="saved-server-list">
-              {!storageReady ? <div className="sidebar-empty">Serverdateien werden geladen …</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">Noch keine Server gespeichert</div> : savedHosts.map((server) => (
+            <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
+              {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : savedHosts.map((server) => (
                 <div className="saved-server" key={server.id}>
                   <button className="saved-server-main" disabled={!storageReady || Boolean(storageError)} onClick={() => openServer(server)} title={`${server.username ? `${server.username}@` : ""}${server.host}`} type="button">
                     <span className="saved-server-name">{server.label || server.host}</span>
                     <span className="saved-server-host">{server.username ? `${server.username}@` : ""}{server.host}</span>
-                    {server.identityFile && <span className="saved-server-key">Schlüssel · {fileName(server.identityFile)}</span>}
+                    {server.identityFile && <span className="saved-server-key">{t("sidebar.key", { file: fileName(server.identityFile) })}</span>}
                   </button>
                   {confirmDeleteId === server.id ? (
-                    <div className="sidebar-delete-confirm" role="group" aria-label={`${server.label || server.host} entfernen`}>
-                      <button className="text-action" onClick={() => setConfirmDeleteId(null)} type="button">Abbrechen</button>
-                      <button className="text-action text-danger" onClick={() => void removeHost(server.id)} type="button">Entfernen</button>
+                    <div className="sidebar-delete-confirm" role="group" aria-label={t("sidebar.removeGroup", { name: server.label || server.host })}>
+                      <button className="text-action" onClick={() => setConfirmDeleteId(null)} type="button">{t("common.cancel")}</button>
+                      <button className="text-action text-danger" onClick={() => void removeHost(server.id)} type="button">{t("sidebar.remove")}</button>
                     </div>
                   ) : (
                     <div className="saved-server-actions">
-                      <button aria-label={`${server.label || server.host} bearbeiten`} className="icon-button row-icon-button" onClick={() => openEditor(server)} title="Bearbeiten" type="button"><span aria-hidden="true">✎</span></button>
-                      <button aria-label={`${server.label || server.host} löschen`} className="icon-button row-icon-button" onClick={() => setConfirmDeleteId(server.id)} title="Löschen" type="button"><span aria-hidden="true">×</span></button>
+                      <button aria-label={t("sidebar.editServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => openEditor(server)} title={t("sidebar.edit")} type="button"><span aria-hidden="true">✎</span></button>
+                      <button aria-label={t("sidebar.deleteServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => setConfirmDeleteId(server.id)} title={t("sidebar.delete")} type="button"><span aria-hidden="true">×</span></button>
                     </div>
                   )}
                 </div>
               ))}
             </nav>
             <div className="sidebar-bottom">
-              <div className="open-ssh-badge"><span>SSH</span><div><strong>OpenSSH</strong><small>Systeminstallation</small></div></div>
-              <div className="sidebar-meta">Keine Cloud · Kein Konto · Keine Telemetrie</div>
+              <div className="open-ssh-badge"><span>SSH</span><div><strong>OpenSSH</strong><small>{t("sidebar.systemInstall")}</small></div></div>
+              <div className="sidebar-meta">{t("sidebar.meta")}</div>
             </div>
           </aside>
           <div
             aria-controls="server-sidebar"
-            aria-label="Breite der Serverleiste ändern"
+            aria-label={t("sidebar.resize")}
             aria-orientation="vertical"
             aria-valuemax={420}
             aria-valuemin={210}
@@ -360,70 +362,71 @@ export default function TabsApp() {
             role="separator"
             tabIndex={0}
           />
-          <button aria-label="Serverleiste schließen" className="sidebar-backdrop" onClick={toggleSidebar} tabIndex={-1} type="button" />
+          <button aria-label={t("sidebar.close")} className="sidebar-backdrop" onClick={toggleSidebar} tabIndex={-1} type="button" />
         </>
       )}
 
       <main className="workspace">
         <header className="topbar">
           <div className="topbar-left">
-            {sidebarCollapsed && <button aria-label="Serverleiste anzeigen" className="icon-button show-sidebar-button" disabled={!storageReady} onClick={toggleSidebar} title="Serverleiste anzeigen" type="button"><span aria-hidden="true">☰</span></button>}
-            <div className="breadcrumb"><span>CRABSHELL</span><i>/</i><strong>TERMINAL</strong></div>
+            {sidebarCollapsed && <button aria-label={t("sidebar.show")} className="icon-button show-sidebar-button" disabled={!storageReady} onClick={toggleSidebar} title={t("sidebar.show")} type="button"><span aria-hidden="true">☰</span></button>}
+            <div className="breadcrumb"><span>CRABSHELL</span><i>/</i><strong>{t("topbar.terminal")}</strong></div>
           </div>
           <div className="topbar-actions">
-            <span className="active-host-label">{activeTab?.title || "Keine Sitzung aktiv"}</span>
-            <span className={`connection-label label-${activeTab?.status ?? "disconnected"}`}><span className="status-led" />{statusLabels[activeTab?.status ?? "disconnected"]}</span>
-            {activeTab?.server && (activeTab.status === "disconnected" || activeTab.status === "failed") && (
-              <button className="connect-button" onClick={() => void terminalStore.connect(activeTab.id)} type="button">Neu verbinden <span aria-hidden="true">↻</span></button>
+            <span className="active-host-label">{activeTab ? titleOf(activeTab) : t("topbar.noSession")}</span>
+            <span className={`connection-label label-${activeTab?.status ?? "disconnected"}`}><span className="status-led" />{statusLabel(activeTab?.status ?? "disconnected")}</span>
+            {activeTab && (activeTab.status === "disconnected" || activeTab.status === "failed") && (
+              <button className="connect-button" onClick={() => void terminalStore.connect(activeTab.id)} type="button">{activeTab.kind === "local" ? t("topbar.restart") : t("topbar.reconnect")} <span aria-hidden="true">↻</span></button>
             )}
-            <button className="disconnect-button" disabled={!activeTab || (activeTab.status !== "connected" && activeTab.status !== "connecting")} onClick={() => activeTab && void terminalStore.disconnect(activeTab.id)} type="button"><span aria-hidden="true">■</span> Trennen</button>
+            <button className="disconnect-button" disabled={!activeTab || (activeTab.status !== "connected" && activeTab.status !== "connecting")} onClick={() => activeTab && void terminalStore.disconnect(activeTab.id)} type="button"><span aria-hidden="true">■</span> {activeTab?.kind === "local" ? t("topbar.stop") : t("topbar.disconnect")}</button>
             <button
-              aria-label={`Farbschema: ${themeModeLabels[appSettings.themeMode]}. Klicken zum Wechseln`}
+              aria-label={t("topbar.themeToggle", { mode: themeModeLabel(appSettings.themeMode) })}
               className="icon-button settings-button theme-toggle"
               disabled={!storageReady || Boolean(storageError)}
               onClick={() => {
                 const next = themeModeCycle[(themeModeCycle.indexOf(appSettings.themeMode) + 1) % themeModeCycle.length];
                 persistSettings({ ...settingsRef.current, themeMode: next });
               }}
-              title={`Farbschema: ${themeModeLabels[appSettings.themeMode]}`}
+              title={t("topbar.themeTitle", { mode: themeModeLabel(appSettings.themeMode) })}
               type="button"
             >
               <span aria-hidden="true">{appSettings.themeMode === "system" ? "◐" : appSettings.themeMode === "light" ? "☀" : "☾"}</span>
             </button>
-            <button aria-label="Einstellungen öffnen" className="icon-button settings-button" disabled={!storageReady || Boolean(storageError)} onClick={() => setSettingsOpen(true)} title="Einstellungen" type="button"><span aria-hidden="true">⚙</span></button>
+            <button aria-label={t("topbar.openSettings")} className="icon-button settings-button" disabled={!storageReady || Boolean(storageError)} onClick={() => setSettingsOpen(true)} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
           </div>
         </header>
 
-        <div aria-label="Terminal-Tabs" className="terminal-tabs" role="tablist">
+        <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
           {terminalSnapshot.tabs.map((tab) => (
             <div className={`terminal-tab${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-active" : ""}`} key={tab.id} style={{ "--tab-color": tab.appearance.tabColor } as CSSProperties}>
-              <button aria-selected={tab.id === terminalSnapshot.activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} role="tab" title={tab.title} type="button">
+              <button aria-selected={tab.id === terminalSnapshot.activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} role="tab" title={titleOf(tab)} type="button">
                 <span className={`tab-status-dot status-${tab.status}`} />
-                <span className="terminal-tab-title">{tab.title}</span>
+                {tab.kind === "local" && <span aria-label={t("tabs.local")} className="tab-kind-local">&gt;_</span>}
+                <span className="terminal-tab-title">{titleOf(tab)}</span>
               </button>
-              <button aria-label={`${tab.title} schließen`} className="terminal-tab-close" onClick={() => void terminalStore.closeTab(tab.id)} title="Tab schließen" type="button">×</button>
+              <button aria-label={t("tabs.close", { name: titleOf(tab) })} className="terminal-tab-close" onClick={() => void terminalStore.closeTab(tab.id)} title={t("tabs.closeTitle")} type="button">×</button>
             </div>
           ))}
-          <button aria-label="Neuen Terminal-Tab öffnen" className="icon-button add-tab-button" onClick={() => terminalStore.createTab()} title="Neuer Tab (Ctrl+Shift+T)" type="button"><span aria-hidden="true">+</span></button>
+          <button aria-label={t("tabs.openLocal")} className="icon-button add-tab-button" onClick={() => terminalStore.openLocalShell()} title={t("tabs.openLocalTitle")} type="button"><span aria-hidden="true">+</span></button>
         </div>
 
         <div className={`terminal-panels${terminalSnapshot.tabs.length === 0 ? " terminal-panels-empty" : ""}`}>
           {terminalSnapshot.tabs.length === 0 ? (
-            <div className="terminal-empty"><span>Wähle links einen Server oder öffne einen neuen Tab.</span></div>
+            <div className="terminal-empty"><span>{t("tabs.empty")}</span></div>
           ) : terminalSnapshot.tabs.map((tab: TerminalTab) => (
-            <section aria-label={`Terminal ${tab.title}`} className={`terminal-tab-panel${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-panel-active" : ""}`} key={tab.id} role="tabpanel" style={{ display: tab.id === terminalSnapshot.activeTabId ? "flex" : "none" }}>
+            <section aria-label={t("terminal.panel", { name: titleOf(tab) })} className={`terminal-tab-panel${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-panel-active" : ""}`} key={tab.id} role="tabpanel" style={{ display: tab.id === terminalSnapshot.activeTabId ? "flex" : "none" }}>
               <div className="terminal-frame">
                 <div className="terminal-heading">
                   <div className="terminal-target">
                     <div className="target-icon" aria-hidden="true"><span /></div>
-                    <div><div className="target-name">{tab.title}</div><div className="target-subtitle">{tab.server ? "Interaktive Shell" : "Wähle einen Server aus der Seitenleiste"}</div></div>
+                    <div><div className="target-name">{titleOf(tab)}</div><div className="target-subtitle">{tab.kind === "local" ? t("terminal.localSubtitle") : t("terminal.sshSubtitle")}</div></div>
                   </div>
-                  <div className="transport-tag"><span /> OPENSSH <b>·</b> PTY</div>
+                  <div className="transport-tag"><span /> {tab.kind === "local" ? t("terminal.local") : "OPENSSH"} <b>·</b> PTY</div>
                 </div>
                 <div className="terminal-body" style={{ "--terminal-bg": tab.appearance.background } as CSSProperties}><TerminalPane tabId={tab.id} paneId={tab.paneTree.paneId} /></div>
                 <div className="terminal-statusbar">
-                  <div className="status-message"><span className={`status-led status-${tab.status}`} />{tab.notice || statusLabels[tab.status]}</div>
-                  <div className="terminal-metrics">{tab.status === "connected" ? "SESSION AKTIV" : "LOKALE SITZUNG"}<span>UTF-8</span></div>
+                  <div className="status-message"><span className={`status-led status-${tab.status}`} />{tab.notice || statusLabel(tab.status)}</div>
+                  <div className="terminal-metrics">{tab.status === "connected" ? t("terminal.sessionActive") : t("terminal.localSession")}<span>UTF-8</span></div>
                 </div>
               </div>
             </section>
@@ -432,7 +435,7 @@ export default function TabsApp() {
 
         <footer className="workspace-footer">
           <span>Crabshell <b>0.1.0</b></span>
-          <span>Ctrl+Shift+C/V kopieren/einfügen · Ctrl+Shift+T neuer Tab · Ctrl+Shift+W schließen · Ctrl+Tab wechseln</span>
+          <span>{t("footer.shortcuts")}</span>
         </footer>
       </main>
 
@@ -446,16 +449,16 @@ export default function TabsApp() {
           <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") terminalStore.cancelPendingPaste(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) terminalStore.cancelPendingPaste(); }} role="presentation">
             <section aria-labelledby="paste-title" aria-modal="true" className="server-dialog paste-dialog" role="dialog">
               <header className="dialog-heading">
-                <div><div className="page-eyebrow">ZWISCHENABLAGE</div><h2 id="paste-title">Mehrzeiligen Text einfügen?</h2></div>
-                <button aria-label="Einfügen abbrechen" className="icon-button" onClick={() => terminalStore.cancelPendingPaste()} type="button">×</button>
+                <div><div className="page-eyebrow">{t("paste.eyebrow")}</div><h2 id="paste-title">{t("paste.title")}</h2></div>
+                <button aria-label={t("paste.cancelLabel")} className="icon-button" onClick={() => terminalStore.cancelPendingPaste()} type="button">×</button>
               </header>
               <div className="form-footnote">
-                {lineCount} Zeilen · {text.length} Zeichen in <strong>{targetTab?.title ?? "Terminal"}</strong>. Zeilenumbrüche können Befehle sofort ausführen.
+                {t("paste.summary", { lines: lineCount, chars: text.length })} <strong>{targetTab ? titleOf(targetTab) : t("terminal.pane")}</strong>. {t("paste.warning")}
               </div>
               <pre className="paste-preview">{preview}</pre>
               <div className="editor-actions">
-                <button autoFocus className="button button-secondary" onClick={() => terminalStore.cancelPendingPaste()} type="button">Abbrechen</button>
-                <button className="button button-primary" onClick={() => terminalStore.confirmPendingPaste()} type="button">Einfügen</button>
+                <button autoFocus className="button button-secondary" onClick={() => terminalStore.cancelPendingPaste()} type="button">{t("common.cancel")}</button>
+                <button className="button button-primary" onClick={() => terminalStore.confirmPendingPaste()} type="button">{t("paste.confirm")}</button>
               </div>
             </section>
           </div>
@@ -466,35 +469,35 @@ export default function TabsApp() {
         <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") setEditorOpen(false); }} onMouseDown={(event) => { if (event.target === event.currentTarget) setEditorOpen(false); }} role="presentation">
           <section aria-labelledby="editor-title" aria-modal="true" className="server-dialog" role="dialog">
             <header className="dialog-heading">
-              <div><div className="page-eyebrow">SSH-PROFIL</div><h2 id="editor-title">{editingId ? "Server bearbeiten" : "Neuen Server hinzufügen"}</h2></div>
-              <button aria-label="Dialog schließen" className="icon-button" onClick={() => setEditorOpen(false)} type="button">×</button>
+              <div><div className="page-eyebrow">{t("server.eyebrow")}</div><h2 id="editor-title">{editingId ? t("server.editTitle") : t("server.addTitle")}</h2></div>
+              <button aria-label={t("server.closeDialog")} className="icon-button" onClick={() => setEditorOpen(false)} type="button">×</button>
             </header>
             <form className="editor-form" onSubmit={saveHost}>
-              <label className="field-label" htmlFor="label">Name / Label <span>optional</span></label>
-              <input autoComplete="off" autoFocus id="label" name="label" onChange={(event) => setLabel(event.target.value)} placeholder="z. B. Produktivserver" value={label} />
-              <label className="field-label" htmlFor="host">Host oder SSH-Alias</label>
-              <input autoComplete="off" id="host" name="host" onChange={(event) => setHost(event.target.value)} placeholder="z. B. dev-server" spellCheck={false} value={host} required />
-              <label className="field-label" htmlFor="username">Benutzer <span>optional</span></label>
-              <input autoComplete="off" id="username" name="username" onChange={(event) => setUsername(event.target.value)} placeholder="aus ~/.ssh/config" spellCheck={false} value={username} />
-              <label className="field-label" htmlFor="identity-file">Privater Schlüssel <span>optional</span></label>
+              <label className="field-label" htmlFor="label">{t("server.label")} <span>{t("server.optional")}</span></label>
+              <input autoComplete="off" autoFocus id="label" name="label" onChange={(event) => setLabel(event.target.value)} placeholder={t("server.labelPlaceholder")} value={label} />
+              <label className="field-label" htmlFor="host">{t("server.host")}</label>
+              <input autoComplete="off" id="host" name="host" onChange={(event) => setHost(event.target.value)} placeholder={t("server.hostPlaceholder")} spellCheck={false} value={host} required />
+              <label className="field-label" htmlFor="username">{t("server.username")} <span>{t("server.optional")}</span></label>
+              <input autoComplete="off" id="username" name="username" onChange={(event) => setUsername(event.target.value)} placeholder={t("server.usernamePlaceholder")} spellCheck={false} value={username} />
+              <label className="field-label" htmlFor="identity-file">{t("server.privateKey")} <span>{t("server.optional")}</span></label>
               <div className="key-picker">
-                <span className="key-picker-name" title={identityFile || undefined}>{identityFile ? fileName(identityFile) : "Kein Schlüssel ausgewählt"}</span>
-                <button className="button button-secondary key-picker-button" onClick={() => void choosePrivateKey()} type="button">Datei wählen</button>
-                {identityFile && <button aria-label="Privaten Schlüssel entfernen" className="button button-secondary key-picker-clear" onClick={() => setIdentityFile("")} title="Schlüssel entfernen" type="button">×</button>}
+                <span className="key-picker-name" title={identityFile || undefined}>{identityFile ? fileName(identityFile) : t("server.noKey")}</span>
+                <button className="button button-secondary key-picker-button" onClick={() => void choosePrivateKey()} type="button">{t("server.chooseFile")}</button>
+                {identityFile && <button aria-label={t("server.removeKey")} className="button button-secondary key-picker-clear" onClick={() => setIdentityFile("")} title={t("server.removeKeyTitle")} type="button">×</button>}
               </div>
-              <label className="field-label" htmlFor="appearance">Design</label>
+              <label className="field-label" htmlFor="appearance">{t("server.design")}</label>
               <div className="key-picker">
                 <select id="appearance" onChange={(event) => setAppearanceId(event.target.value)} value={appearanceId}>
-                  <option value="">Standard ({appSettings.appearances.find((item) => item.id === appSettings.defaultAppearanceId)?.name ?? "Crabshell"})</option>
+                  <option value="">{t("server.defaultDesign", { name: appSettings.appearances.find((item) => item.id === appSettings.defaultAppearanceId)?.name ?? "Crabshell" })}</option>
                   {appSettings.appearances.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <button className="button button-secondary key-picker-button" onClick={() => setSettingsOpen(true)} type="button">Designs bearbeiten</button>
+                <button className="button button-secondary key-picker-button" onClick={() => setSettingsOpen(true)} type="button">{t("server.editDesigns")}</button>
               </div>
-              <div className="form-footnote">OpenSSH verwendet den Schlüssel direkt von deinem Gerät. Beim ersten Verbinden erscheint die Host-Prüfung im Terminal.</div>
+              <div className="form-footnote">{t("server.footnote")}</div>
               {storageError && <div aria-live="polite" className="editor-notice">{storageError}</div>}
               <div className="editor-actions">
-                <button className="button button-secondary" onClick={() => setEditorOpen(false)} type="button">Abbrechen</button>
-                <button className="button button-primary" disabled={!storageReady || Boolean(storageError)} type="submit">{editingId ? "Änderungen speichern" : "Server speichern"}</button>
+                <button className="button button-secondary" onClick={() => setEditorOpen(false)} type="button">{t("common.cancel")}</button>
+                <button className="button button-primary" disabled={!storageReady || Boolean(storageError)} type="submit">{editingId ? t("server.saveChanges") : t("server.save")}</button>
               </div>
             </form>
           </section>
@@ -502,7 +505,7 @@ export default function TabsApp() {
       )}
       {/* Rendered last so it stacks above the server dialog when opened from there. */}
       {settingsOpen && (
-        <SettingsDialog onClose={() => setSettingsOpen(false)} onSave={saveSettingsDialog} servers={savedHosts} settings={appSettings} />
+        <SettingsDialog onClose={() => setSettingsOpen(false)} onSave={saveSettingsDialog} servers={savedHosts} settings={appSettings} systemLocale={systemLocale} />
       )}
     </div>
   );

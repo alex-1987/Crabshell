@@ -1,5 +1,5 @@
 import type { ITheme } from "@xterm/xterm";
-import type { AppSettings, Appearance, SavedHost } from "./terminalTypes";
+import type { AppSettings, Appearance } from "./terminalTypes";
 
 export const DEFAULT_APPEARANCE_ID = "default";
 export const MIN_FONT_SIZE = 8;
@@ -23,7 +23,9 @@ export const defaultSettings: AppSettings = {
   confirmMultilinePaste: true,
   appearances: [builtinAppearance],
   defaultAppearanceId: DEFAULT_APPEARANCE_ID,
+  localAppearanceId: "",
   themeMode: "dark",
+  language: "system",
   uiScale: 100,
 };
 
@@ -59,13 +61,14 @@ export function terminalTheme(appearance: Appearance): ITheme {
   };
 }
 
+/** `preferredId` is the server's (or local shell's) design; empty falls back to the default. */
 export function resolveAppearance(
-  server: SavedHost | null,
+  preferredId: string,
   appearances: Appearance[],
   defaultAppearanceId: string,
 ): Appearance {
   return (
-    (server?.appearanceId && appearances.find((item) => item.id === server.appearanceId)) ||
+    (preferredId && appearances.find((item) => item.id === preferredId)) ||
     appearances.find((item) => item.id === defaultAppearanceId) ||
     appearances[0] ||
     builtinAppearance

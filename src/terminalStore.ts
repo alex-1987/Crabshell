@@ -4,7 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
-import type { Appearance, SavedHost, SessionEvent, SessionStatus, TerminalSnapshot, TerminalTab } from "./terminalTypes";
+import { t, translateBackend } from "./i18n";
+import type { Appearance, SavedHost, SessionEvent, SessionStatus, TabKind, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
 const initialSnapshot: TerminalSnapshot = { tabs: [], activeTabId: null, pendingPaste: null };
 
@@ -38,6 +39,7 @@ class TerminalStore {
   private pendingPaste: { tabId: string; text: string } | null = null;
   private appearances: Appearance[] = [builtinAppearance];
   private defaultAppearanceId = builtinAppearance.id;
+  private localAppearanceId = "";
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -50,9 +52,10 @@ class TerminalStore {
     this.clipboardPreferences = preferences;
   }
 
-  setAppearances(appearances: Appearance[], defaultAppearanceId: string): void {
+  setAppearances(appearances: Appearance[], defaultAppearanceId: string, localAppearanceId: string): void {
     this.appearances = appearances;
     this.defaultAppearanceId = defaultAppearanceId;
+    this.localAppearanceId = localAppearanceId;
     for (const tab of this.tabs) this.applyAppearance(tab.id);
   }
 
@@ -71,7 +74,7 @@ class TerminalStore {
     const tab = this.tabs.find((item) => item.id === tabId);
     const runtime = this.runtimes.get(tabId);
     if (!tab || !runtime) return;
-    const appearance = resolveAppearance(tab.server, this.appearances, this.defaultAppearanceId);
+    const appearance = this.appearanceFor(tab.kind, tab.server);
     runtime.terminal.options.theme = terminalTheme(appearance);
     if (runtime.terminal.options.fontSize !== appearance.fontSize) {
       runtime.terminal.options.fontSize = appearance.fontSize;
@@ -87,9 +90,9 @@ class TerminalStore {
     if (!runtime || !selection) return;
     try {
       await writeText(selection);
-      this.updateTab(tabId, { notice: "Auswahl in die Zwischenablage kopiert." });
+      this.updateTab(tabId, { notice: t("notice.copied") });
     } catch (error) {
-      this.updateTab(tabId, { notice: `Kopieren fehlgeschlagen: ${String(error)}` });
+      this.updateTab(tabId, { notice: t("notice.copyFailed", { error: translateBackend(error) }) });
     }
   }
 
@@ -100,7 +103,7 @@ class TerminalStore {
       const text = await readText();
       if (text) this.pasteText(tabId, text);
     } catch (error) {
-      this.updateTab(tabId, { notice: `Einfügen fehlgeschlagen: ${String(error)}` });
+      this.updateTab(tabId, { notice: t("notice.pasteFailed", { error: translateBackend(error) }) });
     }
   }
 
@@ -109,7 +112,7 @@ class TerminalStore {
     const runtime = this.runtimes.get(tabId);
     if (!runtime || runtime.closing || !text) return;
     if (!this.canSendInput(tabId)) {
-      this.updateTab(tabId, { notice: "Einfügen nicht möglich: keine aktive Sitzung." });
+      this.updateTab(tabId, { notice: t("notice.pasteNoSession") });
       return;
     }
     if (this.clipboardPreferences.confirmMultilinePaste && /[\r\n]/.test(text)) {
@@ -144,10 +147,31 @@ class TerminalStore {
     return Boolean(runtime && !runtime.closing && runtime.sessionId && tab?.status === "connected");
   }
 
-  createTab(server: SavedHost | null = null): string {
+  private appearanceFor(kind: TabKind, server: SavedHost | null): Appearance {
+    const preferredId = kind === "local" ? this.localAppearanceId : server?.appearanceId ?? "";
+    return resolveAppearance(preferredId, this.appearances, this.defaultAppearanceId);
+  }
+
+  /** Opens a new tab running the user's local login shell. */
+  openLocalShell(): string {
+    const tabId = this.createTab(null);
+    void this.connect(tabId);
+    return tabId;
+  }
+
+  /** Opens a new tab and connects it to the given server over SSH. */
+  openServer(server: SavedHost): string {
+    const tabId = this.createTab(server);
+    void this.connect(tabId);
+    return tabId;
+  }
+
+  /** `server === null` creates a local shell tab. */
+  private createTab(server: SavedHost | null): string {
     const id = crypto.randomUUID();
     const paneId = crypto.randomUUID();
-    const appearance = resolveAppearance(server, this.appearances, this.defaultAppearanceId);
+    const kind: TabKind = server ? "ssh" : "local";
+    const appearance = this.appearanceFor(kind, server);
     const terminal = new Terminal({
       allowProposedApi: false,
       cursorBlink: true,
@@ -188,7 +212,7 @@ class TerminalStore {
         const selection = terminal.getSelection();
         if (selection && this.runtimes.get(id) === runtime) {
           void writeText(selection).catch((error: unknown) => {
-            this.updateTab(id, { notice: `Kopieren fehlgeschlagen: ${String(error)}` });
+            this.updateTab(id, { notice: t("notice.copyFailed", { error: translateBackend(error) }) });
           });
         }
       }, 150);
@@ -198,14 +222,16 @@ class TerminalStore {
       const bytes = new TextEncoder().encode(data);
       void invoke("write_to_session", bytes, {
         headers: { "x-session-id": runtime.sessionId },
-      }).catch((error: unknown) => this.updateTab(id, { notice: String(error) }));
+      }).catch((error: unknown) => this.updateTab(id, { notice: translateBackend(error) }));
     });
 
     this.tabs = [
       ...this.tabs,
       {
         id,
-        title: server ? this.serverTitle(server) : "Neuer Tab",
+        kind,
+        // Local tabs get their (translated) title at render time.
+        title: server ? this.serverTitle(server) : "",
         server,
         paneTree: { kind: "pane", paneId },
         status: "disconnected",
@@ -242,9 +268,6 @@ class TerminalStore {
     if (!runtime.opened) {
       terminal.open(element);
       runtime.opened = true;
-      terminal.writeln("Crabshell // lokales SSH-Terminal");
-      terminal.writeln("OpenSSH übernimmt Schlüssel, Agent und known_hosts.");
-      terminal.writeln("");
     }
 
     runtime.observer?.disconnect();
@@ -273,28 +296,22 @@ class TerminalStore {
     };
   }
 
-  async connect(tabId: string, server?: SavedHost): Promise<void> {
+  /** Starts (or restarts) the tab's session: SSH for server tabs, the login shell for local tabs. */
+  async connect(tabId: string): Promise<void> {
     const tab = this.tabs.find((item) => item.id === tabId);
     const runtime = this.runtimes.get(tabId);
     if (!tab || !runtime || runtime.closing || runtime.sessionId || tab.status === "connecting" || tab.status === "connected") return;
-
-    const selectedServer = server ?? tab.server;
-    if (!selectedServer) {
-      this.updateTab(tabId, { notice: "Wähle zuerst einen gespeicherten Server aus der Seitenleiste." });
-      return;
-    }
+    const server = tab.kind === "ssh" ? tab.server : null;
+    if (tab.kind === "ssh" && !server) return;
 
     const sessionId = crypto.randomUUID();
     runtime.sessionId = sessionId;
-    const title = this.serverTitle(selectedServer);
-    runtime.terminal.clear();
-    runtime.terminal.writeln(`Verbinde mit ${selectedServer.label ? `${selectedServer.label} (${selectedServer.host})` : `${selectedServer.username ? `${selectedServer.username}@` : ""}${selectedServer.host}`} ...`);
-    this.updateTab(tabId, {
-      title,
-      server: selectedServer,
-      status: "connecting",
-      notice: "",
-    });
+    runtime.terminal.reset();
+    if (server) {
+      const target = server.label ? `${server.label} (${server.host})` : `${server.username ? `${server.username}@` : ""}${server.host}`;
+      runtime.terminal.writeln(t("notice.connectingTo", { target }));
+    }
+    this.updateTab(tabId, { status: "connecting", notice: "" });
     this.applyAppearance(tabId);
 
     const onData = new Channel<ArrayBuffer>();
@@ -311,7 +328,7 @@ class TerminalStore {
       }
       this.updateTab(tabId, {
         status,
-        notice: "message" in event ? event.message : "",
+        notice: "message" in event ? translateBackend(event.message) : "",
       });
       if (event.state === "connected") {
         requestAnimationFrame(() => requestAnimationFrame(() => this.fitActiveTab(tabId)));
@@ -319,22 +336,28 @@ class TerminalStore {
     };
 
     const terminal = runtime.terminal;
-    const connectPromise = invoke<void>("connect_host", {
+    const size = {
+      cols: terminal.cols >= 10 ? terminal.cols : 100,
+      rows: terminal.rows >= 2 ? terminal.rows : 30,
+    };
+    const start = server
+      ? invoke<void>("connect_host", {
         request: {
           sessionId,
-          host: selectedServer.host,
-          username: selectedServer.username || null,
-          identityFile: selectedServer.identityFile || null,
-          cols: terminal.cols >= 10 ? terminal.cols : 100,
-          rows: terminal.rows >= 2 ? terminal.rows : 30,
+          host: server.host,
+          username: server.username || null,
+          identityFile: server.identityFile || null,
+          ...size,
         },
         onData,
         onState,
-      }).catch((error: unknown) => {
+      })
+      : invoke<void>("open_local_shell", { request: { sessionId, ...size }, onData, onState });
+    const connectPromise = start.catch((error: unknown) => {
       if (runtime.sessionId === sessionId) runtime.sessionId = null;
       if (!runtime.closing && this.runtimes.get(tabId) === runtime) {
-        this.updateTab(tabId, { status: "failed", notice: String(error) });
-        runtime.terminal.writeln(`\r\n[Crabshell] ${String(error)}`);
+        this.updateTab(tabId, { status: "failed", notice: translateBackend(error) });
+        runtime.terminal.writeln(`\r\n[Crabshell] ${translateBackend(error)}`);
       }
     });
     runtime.connectPromise = connectPromise;
@@ -355,9 +378,10 @@ class TerminalStore {
     try {
       await invoke("close_session", { sessionId });
       if (runtime.sessionId === sessionId) runtime.sessionId = null;
-      this.updateTab(tabId, { status: "disconnected", notice: "Verbindung getrennt." });
+      const tab = this.tabs.find((item) => item.id === tabId);
+      this.updateTab(tabId, { status: "disconnected", notice: tab?.kind === "local" ? t("notice.shellExited") : t("notice.disconnected") });
     } catch (error) {
-      this.updateTab(tabId, { status: "failed", notice: String(error) });
+      this.updateTab(tabId, { status: "failed", notice: translateBackend(error) });
     }
   }
 
@@ -375,7 +399,7 @@ class TerminalStore {
       try {
         await invoke("close_session", { sessionId });
       } catch {
-        runtime.terminal.writeln("\r\n[Crabshell] The session could not be closed cleanly.");
+        runtime.terminal.writeln(`\r\n[Crabshell] ${t("notice.closeFailed")}`);
       }
     }
 
@@ -403,7 +427,7 @@ class TerminalStore {
           sessionId: runtime.sessionId,
           cols: runtime.terminal.cols,
           rows: runtime.terminal.rows,
-        }).catch((error: unknown) => this.updateTab(tabId, { notice: String(error) }));
+        }).catch((error: unknown) => this.updateTab(tabId, { notice: translateBackend(error) }));
       }
     } catch {
       return;
@@ -427,7 +451,7 @@ class TerminalStore {
     }
     if (event.shiftKey && key === "t") {
       event.preventDefault();
-      this.createTab();
+      this.openLocalShell();
       return false;
     }
     if (event.shiftKey && key === "w") {

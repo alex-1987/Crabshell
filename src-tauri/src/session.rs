@@ -5,43 +5,63 @@ use std::{
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 
-pub(crate) trait SshSession: Send {
-    fn connect(
-        host: &str,
-        username: Option<&str>,
-        identity_file: Option<&str>,
-        cols: u16,
-        rows: u16,
-    ) -> Result<(Self, Box<dyn Read + Send>), String>
-    where
-        Self: Sized;
-
+/// A running interactive terminal process (SSH or local shell).
+pub(crate) trait TerminalSession: Send {
     fn write(&mut self, data: &[u8]) -> Result<(), String>;
     fn resize(&self, cols: u16, rows: u16) -> Result<(), String>;
     fn close(&mut self) -> Result<(), String>;
 }
 
-pub(crate) struct OpenSshSession {
+pub(crate) type SessionReader = Box<dyn Read + Send>;
+
+/// A process running inside a pseudo terminal.
+pub(crate) struct PtySession {
     writer: Option<Box<dyn Write + Send>>,
     master: Option<Box<dyn MasterPty + Send>>,
     child: Option<Box<dyn Child + Send + Sync>>,
 }
 
-impl SshSession for OpenSshSession {
-    fn connect(
+impl PtySession {
+    /// Starts OpenSSH for a saved host.
+    pub(crate) fn connect_ssh(
         host: &str,
         username: Option<&str>,
         identity_file: Option<&str>,
         cols: u16,
         rows: u16,
-    ) -> Result<(Self, Box<dyn Read + Send>), String> {
+    ) -> Result<(Self, SessionReader), String> {
         validate_host(host)?;
         if let Some(username) = username {
             validate_username(username)?;
         }
         validate_identity_file(identity_file)?;
         validate_size(cols, rows)?;
+        Self::spawn(
+            ssh_command(host, username, identity_file),
+            cols,
+            rows,
+            "Could not start OpenSSH. Check that `ssh` is installed.",
+        )
+    }
 
+    /// Starts the user's login shell ($SHELL, then the passwd entry, then /bin/sh)
+    /// in the home directory.
+    pub(crate) fn open_local_shell(cols: u16, rows: u16) -> Result<(Self, SessionReader), String> {
+        validate_size(cols, rows)?;
+        Self::spawn(
+            local_shell_command(),
+            cols,
+            rows,
+            "Could not start the local shell",
+        )
+    }
+
+    fn spawn(
+        command: CommandBuilder,
+        cols: u16,
+        rows: u16,
+        spawn_error: &str,
+    ) -> Result<(Self, SessionReader), String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -61,8 +81,8 @@ impl SshSession for OpenSshSession {
             .map_err(|_| "Could not open the terminal input stream".to_string())?;
         let child = pair
             .slave
-            .spawn_command(ssh_command(host, username, identity_file))
-            .map_err(|_| "Could not start OpenSSH. Check that `ssh` is installed.".to_string())?;
+            .spawn_command(command)
+            .map_err(|_| spawn_error.to_string())?;
 
         Ok((
             Self {
@@ -73,16 +93,18 @@ impl SshSession for OpenSshSession {
             reader,
         ))
     }
+}
 
+impl TerminalSession for PtySession {
     fn write(&mut self, data: &[u8]) -> Result<(), String> {
         let writer = self
             .writer
             .as_mut()
-            .ok_or_else(|| "The SSH session is closed".to_string())?;
+            .ok_or_else(|| "The session is closed".to_string())?;
         writer
             .write_all(data)
             .and_then(|_| writer.flush())
-            .map_err(|_| "Could not write to the SSH terminal".to_string())
+            .map_err(|_| "Could not write to the terminal".to_string())
     }
 
     fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
@@ -90,7 +112,7 @@ impl SshSession for OpenSshSession {
         let master = self
             .master
             .as_ref()
-            .ok_or_else(|| "The SSH session is closed".to_string())?;
+            .ok_or_else(|| "The session is closed".to_string())?;
         master
             .resize(PtySize {
                 rows,
@@ -98,7 +120,7 @@ impl SshSession for OpenSshSession {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|_| "Could not resize the SSH terminal".to_string())
+            .map_err(|_| "Could not resize the terminal".to_string())
     }
 
     fn close(&mut self) -> Result<(), String> {
@@ -113,15 +135,15 @@ impl SshSession for OpenSshSession {
                     Err(_) => matches!(child.try_wait(), Ok(Some(_))),
                 },
                 Err(_) => {
-                    close_error = Some("Could not inspect the SSH process".to_string());
+                    close_error = Some("Could not inspect the session process".to_string());
                     false
                 }
             };
 
             if should_wait && child.wait().is_err() {
-                close_error = Some("Could not wait for the SSH process to stop".to_string());
+                close_error = Some("Could not wait for the session process to stop".to_string());
             } else if !should_wait && close_error.is_none() {
-                close_error = Some("Could not stop the SSH process".to_string());
+                close_error = Some("Could not stop the session process".to_string());
             }
         }
 
@@ -131,8 +153,21 @@ impl SshSession for OpenSshSession {
     }
 }
 
+/// Desktop launchers often start the app without TERM; xterm.js speaks xterm-256color.
+fn set_terminal_env(command: &mut CommandBuilder) {
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+}
+
+fn local_shell_command() -> CommandBuilder {
+    let mut command = CommandBuilder::new_default_prog();
+    set_terminal_env(&mut command);
+    command
+}
+
 fn ssh_command(host: &str, username: Option<&str>, identity_file: Option<&str>) -> CommandBuilder {
     let mut command = CommandBuilder::new("ssh");
+    set_terminal_env(&mut command);
     command.arg("-tt");
     if let Some(username) = username {
         command.arg("-l");
@@ -211,8 +246,8 @@ pub(crate) fn validate_session_id(session_id: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ssh_command, validate_host, validate_identity_file, validate_session_id, validate_size,
-        validate_username,
+        local_shell_command, ssh_command, validate_host, validate_identity_file,
+        validate_session_id, validate_size, validate_username,
     };
 
     #[test]
@@ -281,6 +316,42 @@ mod tests {
                 "node-a".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn local_shell_runs_the_default_login_shell_with_xterm_env() {
+        let command = local_shell_command();
+        assert!(command.is_default_prog());
+        assert_eq!(
+            command.get_env("TERM").and_then(|value| value.to_str()),
+            Some("xterm-256color")
+        );
+    }
+
+    /// Spawns the real login shell, so it depends on the machine's shell setup.
+    /// Run with `SHELL=/bin/sh cargo test -- --ignored` (rich shell configs may wait for terminal replies).
+    #[test]
+    #[ignore]
+    fn local_shell_runs_commands() {
+        use super::{PtySession, TerminalSession};
+        use std::io::Read;
+
+        let (mut session, mut reader) = PtySession::open_local_shell(80, 24).unwrap();
+        session.write(b"echo crab42\r").unwrap();
+        let mut output = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        while let Ok(count) = reader.read(&mut buffer) {
+            if count == 0 {
+                break;
+            }
+            output.extend_from_slice(&buffer[..count]);
+            // The typed command is echoed once; the output line adds a second occurrence.
+            if String::from_utf8_lossy(&output).matches("crab42").count() >= 2 {
+                break;
+            }
+        }
+        let _ = session.close();
+        assert!(String::from_utf8_lossy(&output).matches("crab42").count() >= 2);
     }
 
     #[test]

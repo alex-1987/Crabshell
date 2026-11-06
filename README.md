@@ -1,47 +1,53 @@
 # Crabshell
 
-Lokaler SSH-Manager für den Desktop, gebaut mit Tauri 2, Rust und xterm.js. Crabshell verwendet das installierte OpenSSH; Schlüssel, ssh-agent, `known_hosts` und `~/.ssh/config` bleiben auf deinem Gerät.
+Local SSH manager and terminal for the desktop, built with Tauri 2, Rust and xterm.js. Crabshell uses the installed OpenSSH client; keys, ssh-agent, `known_hosts` and `~/.ssh/config` stay on your device.
 
-## Aktueller Stand
+## Features
 
-Crabshell unterstützt mehrere lokal gespeicherte Serverprofile und mehrere Terminal-Tabs mit jeweils eigener SSH-Sitzung:
+Crabshell supports multiple locally saved server profiles and multiple terminal tabs, each with its own SSH session or local shell:
 
-- Serverliste mit Hinzufügen, Bearbeiten und Entfernen von Profilen
-- Terminal-Tabs mit unabhängigen Sessions, Reconnect und Tab-Schließen
-- Farbschema Hell, Dunkel oder Automatisch (System), umschaltbar neben dem Zahnrad; einstellbare Textgröße der Oberfläche (80–150 %)
-- Designs pro Serverprofil: Schrift- und Hintergrundfarbe, Cursor, Markierung, Tab-Farbe und Schriftgröße, verwaltet über das Zahnrad oben rechts
-- Zwischenablage: `Ctrl+Shift+C` kopieren, `Ctrl+Shift+V` einfügen, optional Kopieren beim Markieren und Bestätigung bei mehrzeiligem Einfügen (gilt auch für Kontextmenü und Mittelklick)
-- Tastenkürzel: `Ctrl+Shift+T` neuer Tab, `Ctrl+Shift+W` schließen, `Ctrl+Tab` wechseln
-- Host oder SSH-Config-Alias und optionaler Benutzer pro Profil
-- Optionales Label und Auswahl eines privaten Schlüssels
-- Serverprofile in `servers.json` und UI-Einstellungen in `settings.json` im app-spezifischen Tauri-Konfigurationsordner
-- OpenSSH in einer PTY mit roher Terminal-Ein- und Ausgabe
-- Terminal-Resize, Farben, Disconnect und Statusmeldungen
-- Aufräumen der SSH-Sitzung beim Schließen des Fensters
+- Server list with adding, editing and removing profiles
+- Terminal tabs with independent sessions, reconnect and tab closing
+- Local shell via `+` or `Ctrl+Shift+T`: starts the user's login shell (`$SHELL`) in the home directory, with its own selectable design
+- English and German UI; follows the system locale by default (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`) and can be set in the settings
+- Light, dark or automatic (system) color scheme, toggled next to the gear icon; adjustable interface text size (80–150 %)
+- Designs per server profile: text and background color, cursor, selection, tab color and font size, managed via the gear icon in the top right
+- Clipboard: `Ctrl+Shift+C` copy, `Ctrl+Shift+V` paste, optional copy on select and confirmation for multiline paste (also applies to the context menu and middle click)
+- Shortcuts: `Ctrl+Shift+T` local shell, `Ctrl+Shift+W` close, `Ctrl+Tab` switch
+- Host or SSH config alias and optional user per profile
+- Optional label and private key selection
+- Server profiles in `servers.json` and UI settings in `settings.json` in the app-specific Tauri config directory
+- OpenSSH in a PTY with raw terminal input and output
+- Terminal resize, colors, disconnect and status messages
+- SSH sessions are cleaned up when the window closes
 
-Der private Schlüssel wird nicht kopiert oder ausgelesen; OpenSSH erhält nur den ausgewählten Dateipfad. Vorhandene Browserprofile werden beim ersten Start in `servers.json` migriert. Pane-Splits, SSH-Config-Import, Snippets und SFTP sind noch nicht enthalten.
+The private key is never copied or read; OpenSSH only receives the selected file path. Existing browser profiles are migrated to `servers.json` on first start. Pane splits, SSH config import, snippets and SFTP are not included yet.
 
-## Voraussetzungen
+## Requirements
 
-- Linux mit installiertem OpenSSH-Client (`ssh`)
-- Rust-Toolchain und Node.js mit npm
-- Tauri-Linux-Abhängigkeiten: WebKitGTK 4.1, GTK 3, `build-essential`, `curl`, `wget`, `file`, `libxdo-dev`, `libssl-dev`, `librsvg2-dev` und `libayatana-appindicator3-dev`
+- Linux with the OpenSSH client (`ssh`) installed
+- Rust toolchain and Node.js with npm
+- Tauri Linux dependencies: WebKitGTK 4.1, GTK 3, `build-essential`, `curl`, `wget`, `file`, `libxdo-dev`, `libssl-dev`, `librsvg2-dev` and `libayatana-appindicator3-dev`
 
-## Entwicklung
+## Development
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-## Checks und Release
+## Checks and release
 
 ```bash
 npm run build
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check && cargo test
-npm run tauri build
+SHELL=/bin/sh cargo test -- --ignored   # additionally spawns a real local shell (run inside src-tauri)
+cd .. && npm run tauri build
 ```
 
-Farben der Oberfläche stehen in `src/styles.css`. Nach neuen Farbwerten `python3 scripts/gen-theme-palette.py` ausführen; das Skript ersetzt sie durch Variablen und erzeugt die Hell-Variante in `src/theme-palette.css`.
+## Notes for contributors
 
-Die Host-Prüfung beim ersten Verbindungsaufbau erfolgt im Terminal durch OpenSSH. Bestätige einen Host-Key nur, wenn du den angezeigten Fingerprint geprüft hast.
+- **Translations:** UI texts live in `src/i18n.ts`. English is the reference dictionary; other languages must define the same keys (TypeScript reports missing ones). Error messages from the Rust backend stay in English and are translated in the `backendMessages` table there.
+- **UI colors** are defined in `src/styles.css`. After adding new color values, run `python3 scripts/gen-theme-palette.py`; it replaces them with variables and generates the light variant in `src/theme-palette.css`.
+
+The host key check on the first connection happens in the terminal through OpenSSH. Only accept a host key after verifying the displayed fingerprint.

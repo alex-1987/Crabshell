@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { t } from "./i18n";
 import { terminalStore } from "./terminalStore";
 
 type TerminalPaneProps = {
@@ -15,5 +16,5 @@ export default function TerminalPane({ tabId, paneId }: TerminalPaneProps) {
     return terminalStore.attachPane(tabId, paneId, element);
   }, [paneId, tabId]);
 
-  return <div aria-label="SSH-Terminal" className="terminal-container" ref={elementRef} />;
+  return <div aria-label={t("terminal.pane")} className="terminal-container" ref={elementRef} />;
 }

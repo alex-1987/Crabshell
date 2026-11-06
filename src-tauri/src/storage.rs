@@ -62,13 +62,18 @@ pub(crate) struct AppSettings {
     pub confirm_multiline_paste: bool,
     pub appearances: Vec<Appearance>,
     pub default_appearance_id: String,
+    /// Appearance for local shell tabs; empty means the default appearance.
+    pub local_appearance_id: String,
     /// "system", "light" or "dark".
     pub theme_mode: String,
+    /// "system" (follow the OS locale), "en" or "de".
+    pub language: String,
     /// UI zoom in percent; the terminal font size comes from the appearance instead.
     pub ui_scale: u16,
 }
 
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
+const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 
 impl Default for AppSettings {
@@ -80,7 +85,9 @@ impl Default for AppSettings {
             confirm_multiline_paste: true,
             appearances: vec![Appearance::builtin_default()],
             default_appearance_id: DEFAULT_APPEARANCE_ID.to_string(),
+            local_appearance_id: String::new(),
             theme_mode: "dark".to_string(),
+            language: "system".to_string(),
             ui_scale: 100,
         }
     }
@@ -114,6 +121,9 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
         settings.theme_mode = AppSettings::default().theme_mode;
     }
+    if !LANGUAGES.contains(&settings.language.as_str()) {
+        settings.language = AppSettings::default().language;
+    }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         settings.ui_scale = AppSettings::default().ui_scale;
     }
@@ -137,6 +147,9 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
     }
     if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
         return Err("Unknown color scheme".to_string());
+    }
+    if !LANGUAGES.contains(&settings.language.as_str()) {
+        return Err("Unknown language".to_string());
     }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         return Err("The UI scale is outside the supported range".to_string());
@@ -163,6 +176,13 @@ fn normalize_appearances(settings: &mut AppSettings) {
         .any(|appearance| appearance.id == settings.default_appearance_id)
     {
         settings.default_appearance_id = DEFAULT_APPEARANCE_ID.to_string();
+    }
+    if !settings
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id == settings.local_appearance_id)
+    {
+        settings.local_appearance_id.clear();
     }
 }
 
@@ -192,6 +212,11 @@ fn validate_appearances(settings: &AppSettings) -> Result<(), String> {
     }
     if !ids.contains(settings.default_appearance_id.as_str()) {
         return Err("The default appearance does not exist".to_string());
+    }
+    if !settings.local_appearance_id.is_empty()
+        && !ids.contains(settings.local_appearance_id.as_str())
+    {
+        return Err("The local shell appearance does not exist".to_string());
     }
     Ok(())
 }
@@ -278,6 +303,7 @@ mod tests {
         assert!(!settings.copy_on_select);
         assert!(settings.confirm_multiline_paste);
         assert_eq!(settings.theme_mode, "dark");
+        assert_eq!(settings.language, "system");
         assert_eq!(settings.ui_scale, 100);
     }
 

@@ -19,6 +19,8 @@ export type Appearance = {
   tabColor: string;
 };
 
+import type { LanguageSetting } from "./i18n";
+
 export type ThemeMode = "system" | "light" | "dark";
 
 export type AppSettings = {
@@ -28,7 +30,10 @@ export type AppSettings = {
   confirmMultilinePaste: boolean;
   appearances: Appearance[];
   defaultAppearanceId: string;
+  /** Appearance for local shell tabs; empty string means the default appearance. */
+  localAppearanceId: string;
   themeMode: ThemeMode;
+  language: LanguageSetting;
   /** UI zoom in percent (terminal font size is set per appearance). */
   uiScale: number;
 };
@@ -46,8 +51,11 @@ export type PaneNode = {
   paneId: string;
 };
 
+export type TabKind = "ssh" | "local";
+
 export type TerminalTab = {
   id: string;
+  kind: TabKind;
   title: string;
   server: SavedHost | null;
   paneTree: PaneNode;
