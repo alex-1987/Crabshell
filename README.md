@@ -19,6 +19,8 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 
 ---
 
+
+
 ## Why Crabshell?
 
 - 🔒 **Everything stays on your device.** No cloud, no account, no telemetry. Crabshell runs your system `ssh`, so your keys, `ssh-agent`, `known_hosts` and `~/.ssh/config` just keep working. The app never reads or copies private keys.
@@ -30,6 +32,10 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 
 > [!NOTE]
 > **Crabshell is vibe-coded.** It was built largely through conversations with an AI coding assistant ([Claude Code](https://claude.com/claude-code)): I describe the features, test them, and decide what goes in. The code is checked with type checks, `clippy` and unit tests, but it has not had an independent security review. It is a hobby project, provided as is. Please read the code before trusting it with anything critical, and [open an issue](https://github.com/alex-1987/Crabshell/issues) if you find a problem.
+
+<img width="1912" height="1024" alt="crabby shell" src="https://github.com/user-attachments/assets/5b32970d-347d-49ca-a3b1-a697485e6615" />
+
+
 
 ## Installation
 
