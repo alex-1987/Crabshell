@@ -21,14 +21,46 @@
       }
     ],
     "security": {
-      "capabilities": ["main-capability"],
+      "capabilities": [
+        "main-capability"
+      ],
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
     "active": true,
-    "category": "Utility",
-    "shortDescription": "A local OpenSSH terminal manager",
-    "targets": ["deb", "appimage"]
+    "targets": [
+      "deb",
+      "rpm",
+      "appimage"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Local SSH manager and terminal",
+    "longDescription": "Crabshell is a local SSH manager and terminal built on the system OpenSSH client. Server profiles, keys and known_hosts stay on your device. Supports tabs, local shells, per-server designs and light/dark themes.",
+    "publisher": "Crabshell",
+    "homepage": "https://github.com/alex-1987/Crabshell",
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "linux": {
+      "deb": {
+        "section": "net",
+        "depends": [
+          "openssh-client"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "openssh-clients"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }
