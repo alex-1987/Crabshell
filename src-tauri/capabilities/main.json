@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Minimal capability for the main Crabshell window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
@@ -11,6 +13,21 @@
     "core:path:allow-join",
     "core:path:allow-resolve-directory",
     "core:window:allow-theme",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:app:allow-version",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/sponsors/alex-1987"
+        },
+        {
+          "url": "https://github.com/alex-1987/Crabshell"
+        },
+        {
+          "url": "https://github.com/alex-1987/Crabshell/*"
+        }
+      ]
+    }
   ]
 }

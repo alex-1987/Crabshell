@@ -135,11 +135,23 @@ SHELL=/bin/sh cargo test -- --ignored   # additionally spawns a real local shell
 
 ## Releases
 
-Pushing a tag such as `v0.1.0` (or starting the `release` workflow manually) builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, and the pacman package in an Arch Linux container. Everything is attached to a draft release, which you publish yourself after checking it. Bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json` before tagging.
+Pushing a tag such as `v0.2.1` builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, and the pacman package in an Arch Linux container. Everything is attached to a draft release for that tag, which you publish yourself after checking it.
+
+The version is taken from the tag (`v0.2.1` → `0.2.1`; a suffix such as `v0.3.0-beta.1` marks the release as a pre-release), so the version numbers in the repository do not have to be bumped first. To keep them in sync locally anyway, run `node scripts/set-version.mjs 0.2.1`, which updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`. Starting the workflow manually without a tag uses the version from `src-tauri/tauri.conf.json`.
+
+```sh
+git push origin main
+git tag v0.2.1
+git push origin v0.2.1
+```
 
 ## Notes for contributors
 
 - **Translations:** UI texts live in `src/i18n.ts`. English is the reference dictionary; other languages must define the same keys (TypeScript reports missing ones). Error messages from the Rust backend stay in English and are translated in the `backendMessages` table there.
 - **UI colors** are defined in `src/styles.css`. After adding new color values, run `python3 scripts/gen-theme-palette.py`; it replaces them with variables and generates the light variant in `src/theme-palette.css`.
+
+## Support
+
+Crabshell is free. If it is useful to you, you can support it via [GitHub Sponsors](https://github.com/sponsors/alex-1987), also reachable from the ⓘ About dialog in the app. The app only opens that page in your browser; it never handles payment data.
 
 The host key check on the first connection happens in the terminal through OpenSSH. Only accept a host key after verifying the displayed fingerprint.

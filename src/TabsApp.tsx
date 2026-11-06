@@ -1,8 +1,10 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
 import { defaultSettings } from "./appearance";
+import AboutDialog from "./AboutDialog";
 import SettingsDialog from "./SettingsDialog";
 import SnippetEditor from "./SnippetEditor";
 import SnippetPicker from "./SnippetPicker";
@@ -117,6 +119,12 @@ export default function TabsApp() {
   const [snippetNotice, setSnippetNotice] = useState("");
   const [editingSnippet, setEditingSnippet] = useState<Snippet | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    void getVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
   const sidebarWidthRef = useRef(sidebarWidth);
   const settingsRef = useRef<AppSettings>(defaultSettings);
   const resizingSidebarRef = useRef(false);
@@ -510,6 +518,7 @@ export default function TabsApp() {
             >
               <span aria-hidden="true">{appSettings.themeMode === "system" ? "◐" : appSettings.themeMode === "light" ? "☀" : "☾"}</span>
             </button>
+            <button aria-label={t("about.open")} className="icon-button settings-button" onClick={() => setAboutOpen(true)} title={t("about.open")} type="button"><span aria-hidden="true">ⓘ</span></button>
             <button aria-label={t("topbar.openSettings")} className="icon-button settings-button" disabled={!storageReady || Boolean(storageError)} onClick={() => setSettingsOpen(true)} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
           </div>
         </header>
@@ -552,7 +561,7 @@ export default function TabsApp() {
         </div>
 
         <footer className="workspace-footer">
-          <span>Crabshell <b>0.1.0</b></span>
+          <span>Crabshell <b>{appVersion}</b></span>
           <span>{t("footer.shortcuts")}</span>
         </footer>
       </main>
@@ -645,6 +654,7 @@ export default function TabsApp() {
         );
       })()}
       {terminalSnapshot.contextMenu && <TerminalContextMenu key={`${terminalSnapshot.contextMenu.x},${terminalSnapshot.contextMenu.y}`} menu={terminalSnapshot.contextMenu} />}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} version={appVersion} />}
       {pickerOpen && (
         <SnippetPicker canInsert={canInsertSnippet} onClose={closePicker} onInsert={insertSnippet} onManage={manageSnippets} snippets={snippets} />
       )}

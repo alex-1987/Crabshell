@@ -1,11 +1,17 @@
 name: release
 
-# Startet, wenn ein Tag wie v0.1.0 gepusht wird (oder manuell über "Run workflow").
+# Startet, wenn ein Tag wie v0.2.1 gepusht wird (oder manuell über "Run workflow").
+# Die Version kommt aus dem Tag: v0.2.1 (oder v.0.2.1) baut Version 0.2.1 – die Versionsnummern
+# in package.json/tauri.conf.json/Cargo.toml müssen dafür nicht vorher angepasst werden.
+# Bei "Run workflow" ohne Tag wird die Version aus src-tauri/tauri.conf.json genommen.
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+
+permissions:
+  contents: write   # nötig, damit der Workflow das Release anlegen und Dateien hochladen darf
 
 jobs:
   build:
@@ -40,6 +46,18 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Set version from tag
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            version=$(node scripts/set-version.mjs "${{ github.ref_name }}")
+          else
+            version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${version}"
+
       - name: Install frontend dependencies
         run: npm ci
 
@@ -47,11 +65,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__             # __VERSION__ wird durch die App-Version ersetzt
-          releaseName: 'Crabshell v__VERSION__'
+          # Genau der gepushte Tag (kein neuer Tag); bei "Run workflow" v<Version aus tauri.conf.json>.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
+          releaseName: 'Crabshell v${{ steps.version.outputs.version }}'
           releaseBody: 'Linux-Pakete: .deb (Debian, Ubuntu, Mint, Pop!_OS), .rpm (Fedora, openSUSE), .pkg.tar.zst (Arch, CachyOS, EndeavourOS, Manjaro) und .AppImage (alle anderen). Voraussetzung: OpenSSH-Client (ssh) ist installiert.'
           releaseDraft: true                # erst prüfen, dann selbst veröffentlichen
-          prerelease: true                  # für 0.1.0 sinnvoll
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}   # z. B. v0.3.0-beta.1
 
   # pacman-Paket für Arch-basierte Distributionen (Arch, CachyOS, EndeavourOS, Manjaro, ...).
   # Gebaut wird in einem Arch-Container mit packaging/arch/PKGBUILD und anschließend an das
@@ -70,6 +89,10 @@ jobs:
 
       - uses: actions/checkout@v7
 
+      - name: Set version from tag
+        if: ${{ github.ref_type == 'tag' }}
+        run: node scripts/set-version.mjs "${{ github.ref_name }}"
+
       - name: Build pacman package
         run: |
           # makepkg läuft nicht als root.
@@ -82,5 +105,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          gh release upload "v${version}" packaging/arch/*.pkg.tar.zst --clobber --repo "${{ github.repository }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${{ github.ref_name }}"
+          else
+            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          fi
+          gh release upload "${tag}" packaging/arch/*.pkg.tar.zst --clobber --repo "${{ github.repository }}"

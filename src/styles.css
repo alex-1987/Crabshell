@@ -606,3 +606,17 @@ textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0
 /* Host and port in the server dialog */
 .host-port-row { display: grid; grid-template-columns: minmax(0, 1fr) 86px; gap: 8px; }
 .host-port-row .port-input { text-align: center; }
+
+/* About dialog */
+.about-dialog { width: min(520px, calc((100vw - 40px) / var(--ui-zoom, 1))); }
+.about-brand { display: flex; align-items: center; gap: 13px; margin: 14px 0 4px; }
+.about-version { color: var(--c-e2e8db); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 12px; font-weight: 600; }
+.about-tagline { margin-top: 4px; color: var(--c-8a9385); font-size: 11px; }
+.about-text { margin: 14px 0 8px; color: var(--c-c8d0c0); font-size: 11px; line-height: 1.6; }
+.about-facts { margin: 0 0 16px; padding-left: 18px; color: var(--c-b6beb0); font-size: 11px; line-height: 1.7; }
+.about-donate { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 14px; border: 1px solid var(--c-394332); border-radius: 6px; background: var(--c-252c21); }
+.about-donate h3 { margin: 0 0 5px; color: var(--c-e2e8db); font-size: 12px; font-weight: 650; }
+.about-donate p { margin: 0; color: var(--c-b6beb0); font-size: 11px; line-height: 1.5; }
+.about-donate-button { width: auto; flex: 0 0 auto; padding: 0 16px; }
+.about-donate + .form-footnote { margin-top: 9px; }
+@media (max-width: 560px) { .about-donate { flex-direction: column; align-items: stretch; } }
