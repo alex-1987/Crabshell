@@ -3,37 +3,14 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import type { SavedHost, SessionEvent, SessionStatus, TerminalSnapshot, TerminalTab } from "./terminalTypes";
+import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
+import type { Appearance, SavedHost, SessionEvent, SessionStatus, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
 const initialSnapshot: TerminalSnapshot = { tabs: [], activeTabId: null, pendingPaste: null };
 
 type ClipboardPreferences = {
   copyOnSelect: boolean;
   confirmMultilinePaste: boolean;
-};
-
-const terminalTheme = {
-  background: "#10120f",
-  foreground: "#d8ded2",
-  cursor: "#c7e77a",
-  cursorAccent: "#10120f",
-  selectionBackground: "#65734b88",
-  black: "#20241e",
-  red: "#ed7a62",
-  green: "#b3d875",
-  yellow: "#e4c47a",
-  blue: "#8eabb7",
-  magenta: "#b7a0bd",
-  cyan: "#87c6b0",
-  white: "#d8ded2",
-  brightBlack: "#747d6d",
-  brightRed: "#f18e78",
-  brightGreen: "#c7e77a",
-  brightYellow: "#efd28d",
-  brightBlue: "#a4c4d2",
-  brightMagenta: "#c7b1cd",
-  brightCyan: "#9ad6c2",
-  brightWhite: "#f1f3eb",
 };
 
 type TerminalRuntime = {
@@ -45,6 +22,7 @@ type TerminalRuntime = {
   sessionId: string | null;
   connectPromise: Promise<void> | null;
   closing: boolean;
+  selectionTimer: number | null;
 };
 
 class TerminalStore {
@@ -58,6 +36,8 @@ class TerminalStore {
     confirmMultilinePaste: true,
   };
   private pendingPaste: { tabId: string; text: string } | null = null;
+  private appearances: Appearance[] = [builtinAppearance];
+  private defaultAppearanceId = builtinAppearance.id;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -68,6 +48,37 @@ class TerminalStore {
 
   setClipboardPreferences(preferences: ClipboardPreferences): void {
     this.clipboardPreferences = preferences;
+  }
+
+  setAppearances(appearances: Appearance[], defaultAppearanceId: string): void {
+    this.appearances = appearances;
+    this.defaultAppearanceId = defaultAppearanceId;
+    for (const tab of this.tabs) this.applyAppearance(tab.id);
+  }
+
+  /** Keeps open tabs in sync after server profiles were edited or removed. */
+  updateServers(servers: SavedHost[]): void {
+    for (const tab of this.tabs) {
+      if (!tab.server) continue;
+      const updated = servers.find((server) => server.id === tab.server?.id);
+      if (!updated) continue;
+      this.updateTab(tab.id, { server: updated, title: this.serverTitle(updated) });
+      this.applyAppearance(tab.id);
+    }
+  }
+
+  private applyAppearance(tabId: string): void {
+    const tab = this.tabs.find((item) => item.id === tabId);
+    const runtime = this.runtimes.get(tabId);
+    if (!tab || !runtime) return;
+    const appearance = resolveAppearance(tab.server, this.appearances, this.defaultAppearanceId);
+    runtime.terminal.options.theme = terminalTheme(appearance);
+    if (runtime.terminal.options.fontSize !== appearance.fontSize) {
+      runtime.terminal.options.fontSize = appearance.fontSize;
+      // A new font size changes the cell grid, so the PTY needs the new dimensions.
+      requestAnimationFrame(() => this.fitActiveTab(tabId));
+    }
+    if (tab.appearance !== appearance) this.updateTab(tabId, { appearance });
   }
 
   async copySelection(tabId: string): Promise<void> {
@@ -87,16 +98,26 @@ class TerminalStore {
     if (!runtime || runtime.closing) return;
     try {
       const text = await readText();
-      if (!text) return;
-      if (this.clipboardPreferences.confirmMultilinePaste && /[\r\n]/.test(text)) {
-        this.pendingPaste = { tabId, text };
-        this.publish();
-        return;
-      }
-      runtime.terminal.paste(text);
+      if (text) this.pasteText(tabId, text);
     } catch (error) {
       this.updateTab(tabId, { notice: `Einfügen fehlgeschlagen: ${String(error)}` });
     }
+  }
+
+  /** Routes every paste (shortcut, context menu, middle click) through the multiline check. */
+  private pasteText(tabId: string, text: string): void {
+    const runtime = this.runtimes.get(tabId);
+    if (!runtime || runtime.closing || !text) return;
+    if (!this.canSendInput(tabId)) {
+      this.updateTab(tabId, { notice: "Einfügen nicht möglich: keine aktive Sitzung." });
+      return;
+    }
+    if (this.clipboardPreferences.confirmMultilinePaste && /[\r\n]/.test(text)) {
+      this.pendingPaste = { tabId, text };
+      this.publish();
+      return;
+    }
+    runtime.terminal.paste(text);
   }
 
   confirmPendingPaste(): void {
@@ -106,26 +127,36 @@ class TerminalStore {
     if (runtime && !runtime.closing) runtime.terminal.paste(pending.text);
     this.pendingPaste = null;
     this.publish();
+    runtime?.terminal.focus();
   }
 
   cancelPendingPaste(): void {
-    if (!this.pendingPaste) return;
+    const pending = this.pendingPaste;
+    if (!pending) return;
     this.pendingPaste = null;
     this.publish();
+    this.runtimes.get(pending.tabId)?.terminal.focus();
+  }
+
+  private canSendInput(tabId: string): boolean {
+    const runtime = this.runtimes.get(tabId);
+    const tab = this.tabs.find((item) => item.id === tabId);
+    return Boolean(runtime && !runtime.closing && runtime.sessionId && tab?.status === "connected");
   }
 
   createTab(server: SavedHost | null = null): string {
     const id = crypto.randomUUID();
     const paneId = crypto.randomUUID();
+    const appearance = resolveAppearance(server, this.appearances, this.defaultAppearanceId);
     const terminal = new Terminal({
       allowProposedApi: false,
       cursorBlink: true,
       convertEol: false,
       fontFamily: '"JetBrains Mono", "DejaVu Sans Mono", monospace',
-      fontSize: 13,
+      fontSize: appearance.fontSize,
       lineHeight: 1.35,
       scrollback: 4000,
-      theme: terminalTheme,
+      theme: terminalTheme(appearance),
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -144,12 +175,26 @@ class TerminalStore {
       sessionId: null,
       connectPromise: null,
       closing: false,
+      selectionTimer: null,
     };
     this.runtimes.set(id, runtime);
     terminal.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event));
+    terminal.onSelectionChange(() => {
+      if (!this.clipboardPreferences.copyOnSelect) return;
+      if (runtime.selectionTimer !== null) window.clearTimeout(runtime.selectionTimer);
+      // Debounce so dragging a selection writes the clipboard once, not on every mouse move.
+      runtime.selectionTimer = window.setTimeout(() => {
+        runtime.selectionTimer = null;
+        const selection = terminal.getSelection();
+        if (selection && this.runtimes.get(id) === runtime) {
+          void writeText(selection).catch((error: unknown) => {
+            this.updateTab(id, { notice: `Kopieren fehlgeschlagen: ${String(error)}` });
+          });
+        }
+      }, 150);
+    });
     terminal.onData((data) => {
-      const currentTab = this.tabs.find((tab) => tab.id === id);
-      if (this.runtimes.get(id) !== runtime || runtime.closing || !runtime.sessionId || currentTab?.status !== "connected") return;
+      if (this.runtimes.get(id) !== runtime || !this.canSendInput(id) || !runtime.sessionId) return;
       const bytes = new TextEncoder().encode(data);
       void invoke("write_to_session", bytes, {
         headers: { "x-session-id": runtime.sessionId },
@@ -165,6 +210,7 @@ class TerminalStore {
         paneTree: { kind: "pane", paneId },
         status: "disconnected",
         notice: "",
+        appearance,
       },
     ];
     this.activateTab(id);
@@ -208,7 +254,18 @@ class TerminalStore {
       requestAnimationFrame(() => requestAnimationFrame(() => this.fitActiveTab(tabId)));
     }
 
+    // Capture native paste events (context menu, middle click) before xterm's own
+    // textarea handler sends them unchecked, so they share the multiline confirmation.
+    const onNativePaste = (event: ClipboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (text) this.pasteText(tabId, text);
+    };
+    element.addEventListener("paste", onNativePaste, true);
+
     return () => {
+      element.removeEventListener("paste", onNativePaste, true);
       if (runtime.element !== element) return;
       runtime.observer?.disconnect();
       runtime.observer = null;
@@ -238,6 +295,7 @@ class TerminalStore {
       status: "connecting",
       notice: "",
     });
+    this.applyAppearance(tabId);
 
     const onData = new Channel<ArrayBuffer>();
     onData.onmessage = (bytes) => {
@@ -267,8 +325,8 @@ class TerminalStore {
           host: selectedServer.host,
           username: selectedServer.username || null,
           identityFile: selectedServer.identityFile || null,
-          cols: terminal.cols >= 20 ? terminal.cols : 100,
-          rows: terminal.rows >= 5 ? terminal.rows : 30,
+          cols: terminal.cols >= 10 ? terminal.cols : 100,
+          rows: terminal.rows >= 2 ? terminal.rows : 30,
         },
         onData,
         onState,
@@ -322,8 +380,10 @@ class TerminalStore {
     }
 
     runtime.observer?.disconnect();
+    if (runtime.selectionTimer !== null) window.clearTimeout(runtime.selectionTimer);
     runtime.terminal.dispose();
     this.runtimes.delete(tabId);
+    if (this.pendingPaste?.tabId === tabId) this.pendingPaste = null;
     this.tabs = this.tabs.filter((tab) => tab.id !== tabId);
     if (this.activeTabId === tabId) {
       this.activeTabId = this.tabs.at(-1)?.id ?? null;
@@ -338,7 +398,7 @@ class TerminalStore {
     if (!runtime?.element) return;
     try {
       runtime.fitAddon.fit();
-      if (runtime.sessionId && runtime.terminal.cols >= 20 && runtime.terminal.rows >= 5) {
+      if (runtime.sessionId && runtime.terminal.cols >= 10 && runtime.terminal.rows >= 2) {
         void invoke("resize_session", {
           sessionId: runtime.sessionId,
           cols: runtime.terminal.cols,
@@ -354,6 +414,17 @@ class TerminalStore {
     if (event.type !== "keydown" || !event.ctrlKey) return true;
     const key = event.key.toLowerCase();
     const activeTabId = this.activeTabId;
+    if (event.shiftKey && key === "c") {
+      event.preventDefault();
+      if (activeTabId) void this.copySelection(activeTabId);
+      return false;
+    }
+    if (event.shiftKey && key === "v") {
+      // preventDefault also suppresses the native paste event, so text is not inserted twice.
+      event.preventDefault();
+      if (activeTabId) void this.pasteFromClipboard(activeTabId);
+      return false;
+    }
     if (event.shiftKey && key === "t") {
       event.preventDefault();
       this.createTab();

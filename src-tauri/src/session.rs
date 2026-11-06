@@ -185,8 +185,12 @@ fn validate_username(username: &str) -> Result<(), String> {
     Ok(())
 }
 
+// Kept small so that tiny windows still report their real size to the remote PTY.
+const MIN_COLS: u16 = 10;
+const MIN_ROWS: u16 = 2;
+
 fn validate_size(cols: u16, rows: u16) -> Result<(), String> {
-    if !(20..=500).contains(&cols) || !(5..=200).contains(&rows) {
+    if !(MIN_COLS..=500).contains(&cols) || !(MIN_ROWS..=200).contains(&rows) {
         return Err("The terminal size is outside the supported range".to_string());
     }
     Ok(())
@@ -290,6 +294,8 @@ mod tests {
     fn validates_terminal_dimensions_and_session_ids() {
         assert!(validate_size(120, 40).is_ok());
         assert!(validate_size(0, 40).is_err());
+        assert!(validate_size(10, 2).is_ok());
+        assert!(validate_size(9, 40).is_err());
         assert!(validate_session_id("f1d6e0d2-8e08").is_ok());
         assert!(validate_session_id("../session").is_err());
     }

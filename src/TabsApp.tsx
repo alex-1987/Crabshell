@@ -2,9 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { homeDir, join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
+import { defaultSettings } from "./appearance";
+import SettingsDialog from "./SettingsDialog";
 import TerminalPane from "./TerminalPane";
+import { themeModeCycle, themeModeLabels, useUiTheme } from "./uiTheme";
 import { terminalStore } from "./terminalStore";
-import type { SavedHost, SessionStatus, TerminalTab } from "./terminalTypes";
+import type { AppSettings, SavedHost, SessionStatus, TerminalTab } from "./terminalTypes";
 import "./styles.css";
 
 const HOSTS_STORAGE_KEY = "crabshell.saved-hosts.v1";
@@ -18,13 +21,6 @@ const statusLabels: Record<SessionStatus, string> = {
   connected: "Verbunden",
   disconnecting: "Trenne",
   failed: "Verbindungsfehler",
-};
-
-type AppSettings = {
-  sidebarWidth: number;
-  sidebarCollapsed: boolean;
-  copyOnSelect: boolean;
-  confirmMultilinePaste: boolean;
 };
 
 type PersistentData = {
@@ -44,6 +40,7 @@ function normalizeSavedHost(value: unknown): SavedHost | null {
     host: saved.host,
     username: typeof saved.username === "string" ? saved.username : "",
     identityFile: typeof saved.identityFile === "string" ? saved.identityFile : "",
+    appearanceId: typeof saved.appearanceId === "string" ? saved.appearanceId : "",
   };
 }
 
@@ -68,20 +65,14 @@ function loadLegacySettings(): AppSettings {
   try {
     const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
     return {
+      ...defaultSettings,
       sidebarWidth: Number.isFinite(storedWidth) && storedWidth >= 210 && storedWidth <= 420
         ? Math.round(storedWidth)
         : 280,
       sidebarCollapsed: localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
-      copyOnSelect: false,
-      confirmMultilinePaste: true,
     };
   } catch {
-    return {
-      sidebarWidth: 280,
-      sidebarCollapsed: false,
-      copyOnSelect: false,
-      confirmMultilinePaste: true,
-    };
+    return defaultSettings;
   }
 }
 
@@ -93,12 +84,7 @@ export default function TabsApp() {
   const [savedHosts, setSavedHosts] = useState<SavedHost[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [appSettings, setAppSettings] = useState<AppSettings>({
-    sidebarWidth: 280,
-    sidebarCollapsed: false,
-    copyOnSelect: false,
-    confirmMultilinePaste: true,
-  });
+  const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
   const [storageReady, setStorageReady] = useState(false);
   const [storageError, setStorageError] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -108,16 +94,15 @@ export default function TabsApp() {
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
   const [identityFile, setIdentityFile] = useState("");
+  const [appearanceId, setAppearanceId] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarNotice, setSidebarNotice] = useState("");
   const sidebarWidthRef = useRef(sidebarWidth);
-  const settingsRef = useRef<AppSettings>({
-    sidebarWidth: 280,
-    sidebarCollapsed: false,
-    copyOnSelect: false,
-    confirmMultilinePaste: true,
-  });
+  const settingsRef = useRef<AppSettings>(defaultSettings);
   const resizingSidebarRef = useRef(false);
   sidebarWidthRef.current = sidebarWidth;
+
+  useUiTheme(appSettings.themeMode, appSettings.uiScale);
 
   const terminalSnapshot = useSyncExternalStore(terminalStore.subscribe, terminalStore.getSnapshot);
   const activeTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.activeTabId) ?? null;
@@ -142,6 +127,7 @@ export default function TabsApp() {
         sidebarWidthRef.current = nextSettings.sidebarWidth;
         settingsRef.current = nextSettings;
         terminalStore.setClipboardPreferences(nextSettings);
+        terminalStore.setAppearances(nextSettings.appearances, nextSettings.defaultAppearanceId);
         localStorage.removeItem(HOSTS_STORAGE_KEY);
         localStorage.removeItem(LEGACY_HOST_STORAGE_KEY);
         localStorage.removeItem(SIDEBAR_WIDTH_KEY);
@@ -166,6 +152,7 @@ export default function TabsApp() {
     setHost(server?.host ?? "");
     setUsername(server?.username ?? "");
     setIdentityFile(server?.identityFile ?? "");
+    setAppearanceId(server?.appearanceId ?? "");
     setSidebarNotice("");
     setEditorOpen(true);
   }
@@ -185,6 +172,8 @@ export default function TabsApp() {
       host: savedHost,
       username: username.trim(),
       identityFile,
+      // The design may have been deleted while this dialog was open.
+      appearanceId: appSettings.appearances.some((item) => item.id === appearanceId) ? appearanceId : "",
     };
     const nextServers = editingId
       ? savedHosts.map((saved) => saved.id === editingId ? server : saved)
@@ -193,6 +182,7 @@ export default function TabsApp() {
     try {
       await invoke("save_servers", { servers: nextServers });
       setSavedHosts(nextServers);
+      terminalStore.updateServers(nextServers);
       setSidebarNotice(editingId ? "Server aktualisiert." : "Server gespeichert.");
       setEditorOpen(false);
     } catch (error) {
@@ -238,14 +228,37 @@ export default function TabsApp() {
     void terminalStore.connect(tabId);
   }
 
-  function persistSettings(settings: AppSettings) {
+  function applySettings(settings: AppSettings): AppSettings {
     const normalized = { ...settings, sidebarWidth: Math.round(settings.sidebarWidth) };
     settingsRef.current = normalized;
     setAppSettings(normalized);
     terminalStore.setClipboardPreferences(normalized);
+    terminalStore.setAppearances(normalized.appearances, normalized.defaultAppearanceId);
+    return normalized;
+  }
+
+  function persistSettings(settings: AppSettings) {
+    const normalized = applySettings(settings);
     void invoke("save_settings", { settings: normalized }).catch((error: unknown) => {
       setStorageError(`Einstellungen konnten nicht gespeichert werden: ${String(error)}`);
     });
+  }
+
+  async function saveSettingsDialog(settings: AppSettings) {
+    // Keep sidebar state from the live settings; the dialog does not edit it.
+    const next = { ...settings, sidebarWidth: settingsRef.current.sidebarWidth, sidebarCollapsed: settingsRef.current.sidebarCollapsed };
+    await invoke("save_settings", { settings: next });
+    applySettings(next);
+
+    // Servers pointing at a deleted design fall back to the default design.
+    const knownIds = new Set(next.appearances.map((item) => item.id));
+    if (savedHosts.some((server) => server.appearanceId && !knownIds.has(server.appearanceId))) {
+      const cleaned = savedHosts.map((server) => server.appearanceId && !knownIds.has(server.appearanceId) ? { ...server, appearanceId: "" } : server);
+      await invoke("save_servers", { servers: cleaned });
+      setSavedHosts(cleaned);
+      terminalStore.updateServers(cleaned);
+    }
+    setSettingsOpen(false);
   }
 
   function toggleSidebar() {
@@ -311,27 +324,6 @@ export default function TabsApp() {
                 </div>
               ))}
             </nav>
-            <section aria-label="Terminaleinstellungen" className="sidebar-preferences">
-              <h2>Terminal</h2>
-              <label className="sidebar-setting">
-                <input
-                  checked={appSettings.copyOnSelect}
-                  disabled={!storageReady || Boolean(storageError)}
-                  onChange={(event) => persistSettings({ ...settingsRef.current, copyOnSelect: event.target.checked })}
-                  type="checkbox"
-                />
-                <span>Beim Markieren kopieren</span>
-              </label>
-              <label className="sidebar-setting">
-                <input
-                  checked={appSettings.confirmMultilinePaste}
-                  disabled={!storageReady || Boolean(storageError)}
-                  onChange={(event) => persistSettings({ ...settingsRef.current, confirmMultilinePaste: event.target.checked })}
-                  type="checkbox"
-                />
-                <span>Mehrzeiliges Einfügen bestätigen</span>
-              </label>
-            </section>
             <div className="sidebar-bottom">
               <div className="open-ssh-badge"><span>SSH</span><div><strong>OpenSSH</strong><small>Systeminstallation</small></div></div>
               <div className="sidebar-meta">Keine Cloud · Kein Konto · Keine Telemetrie</div>
@@ -385,12 +377,26 @@ export default function TabsApp() {
               <button className="connect-button" onClick={() => void terminalStore.connect(activeTab.id)} type="button">Neu verbinden <span aria-hidden="true">↻</span></button>
             )}
             <button className="disconnect-button" disabled={!activeTab || (activeTab.status !== "connected" && activeTab.status !== "connecting")} onClick={() => activeTab && void terminalStore.disconnect(activeTab.id)} type="button"><span aria-hidden="true">■</span> Trennen</button>
+            <button
+              aria-label={`Farbschema: ${themeModeLabels[appSettings.themeMode]}. Klicken zum Wechseln`}
+              className="icon-button settings-button theme-toggle"
+              disabled={!storageReady || Boolean(storageError)}
+              onClick={() => {
+                const next = themeModeCycle[(themeModeCycle.indexOf(appSettings.themeMode) + 1) % themeModeCycle.length];
+                persistSettings({ ...settingsRef.current, themeMode: next });
+              }}
+              title={`Farbschema: ${themeModeLabels[appSettings.themeMode]}`}
+              type="button"
+            >
+              <span aria-hidden="true">{appSettings.themeMode === "system" ? "◐" : appSettings.themeMode === "light" ? "☀" : "☾"}</span>
+            </button>
+            <button aria-label="Einstellungen öffnen" className="icon-button settings-button" disabled={!storageReady || Boolean(storageError)} onClick={() => setSettingsOpen(true)} title="Einstellungen" type="button"><span aria-hidden="true">⚙</span></button>
           </div>
         </header>
 
         <div aria-label="Terminal-Tabs" className="terminal-tabs" role="tablist">
           {terminalSnapshot.tabs.map((tab) => (
-            <div className={`terminal-tab${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-active" : ""}`} key={tab.id}>
+            <div className={`terminal-tab${tab.id === terminalSnapshot.activeTabId ? " terminal-tab-active" : ""}`} key={tab.id} style={{ "--tab-color": tab.appearance.tabColor } as CSSProperties}>
               <button aria-selected={tab.id === terminalSnapshot.activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} role="tab" title={tab.title} type="button">
                 <span className={`tab-status-dot status-${tab.status}`} />
                 <span className="terminal-tab-title">{tab.title}</span>
@@ -414,7 +420,7 @@ export default function TabsApp() {
                   </div>
                   <div className="transport-tag"><span /> OPENSSH <b>·</b> PTY</div>
                 </div>
-                <div className="terminal-body"><TerminalPane tabId={tab.id} paneId={tab.paneTree.paneId} /></div>
+                <div className="terminal-body" style={{ "--terminal-bg": tab.appearance.background } as CSSProperties}><TerminalPane tabId={tab.id} paneId={tab.paneTree.paneId} /></div>
                 <div className="terminal-statusbar">
                   <div className="status-message"><span className={`status-led status-${tab.status}`} />{tab.notice || statusLabels[tab.status]}</div>
                   <div className="terminal-metrics">{tab.status === "connected" ? "SESSION AKTIV" : "LOKALE SITZUNG"}<span>UTF-8</span></div>
@@ -426,9 +432,35 @@ export default function TabsApp() {
 
         <footer className="workspace-footer">
           <span>Crabshell <b>0.1.0</b></span>
-          <span>Ctrl+Shift+T neuer Tab · Ctrl+Shift+W schließen · Ctrl+Tab wechseln</span>
+          <span>Ctrl+Shift+C/V kopieren/einfügen · Ctrl+Shift+T neuer Tab · Ctrl+Shift+W schließen · Ctrl+Tab wechseln</span>
         </footer>
       </main>
+
+      {terminalSnapshot.pendingPaste && (() => {
+        const text = terminalSnapshot.pendingPaste.text;
+        const lines = text.split(/\r\n|\r|\n/);
+        const lineCount = text.endsWith("\n") || text.endsWith("\r") ? lines.length - 1 : lines.length;
+        const targetTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.pendingPaste?.tabId);
+        const preview = lines.slice(0, 12).join("\n") + (lines.length > 12 ? "\n…" : "");
+        return (
+          <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") terminalStore.cancelPendingPaste(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) terminalStore.cancelPendingPaste(); }} role="presentation">
+            <section aria-labelledby="paste-title" aria-modal="true" className="server-dialog paste-dialog" role="dialog">
+              <header className="dialog-heading">
+                <div><div className="page-eyebrow">ZWISCHENABLAGE</div><h2 id="paste-title">Mehrzeiligen Text einfügen?</h2></div>
+                <button aria-label="Einfügen abbrechen" className="icon-button" onClick={() => terminalStore.cancelPendingPaste()} type="button">×</button>
+              </header>
+              <div className="form-footnote">
+                {lineCount} Zeilen · {text.length} Zeichen in <strong>{targetTab?.title ?? "Terminal"}</strong>. Zeilenumbrüche können Befehle sofort ausführen.
+              </div>
+              <pre className="paste-preview">{preview}</pre>
+              <div className="editor-actions">
+                <button autoFocus className="button button-secondary" onClick={() => terminalStore.cancelPendingPaste()} type="button">Abbrechen</button>
+                <button className="button button-primary" onClick={() => terminalStore.confirmPendingPaste()} type="button">Einfügen</button>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
 
       {editorOpen && (
         <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") setEditorOpen(false); }} onMouseDown={(event) => { if (event.target === event.currentTarget) setEditorOpen(false); }} role="presentation">
@@ -450,6 +482,14 @@ export default function TabsApp() {
                 <button className="button button-secondary key-picker-button" onClick={() => void choosePrivateKey()} type="button">Datei wählen</button>
                 {identityFile && <button aria-label="Privaten Schlüssel entfernen" className="button button-secondary key-picker-clear" onClick={() => setIdentityFile("")} title="Schlüssel entfernen" type="button">×</button>}
               </div>
+              <label className="field-label" htmlFor="appearance">Design</label>
+              <div className="key-picker">
+                <select id="appearance" onChange={(event) => setAppearanceId(event.target.value)} value={appearanceId}>
+                  <option value="">Standard ({appSettings.appearances.find((item) => item.id === appSettings.defaultAppearanceId)?.name ?? "Crabshell"})</option>
+                  {appSettings.appearances.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <button className="button button-secondary key-picker-button" onClick={() => setSettingsOpen(true)} type="button">Designs bearbeiten</button>
+              </div>
               <div className="form-footnote">OpenSSH verwendet den Schlüssel direkt von deinem Gerät. Beim ersten Verbinden erscheint die Host-Prüfung im Terminal.</div>
               {storageError && <div aria-live="polite" className="editor-notice">{storageError}</div>}
               <div className="editor-actions">
@@ -459,6 +499,10 @@ export default function TabsApp() {
             </form>
           </section>
         </div>
+      )}
+      {/* Rendered last so it stacks above the server dialog when opened from there. */}
+      {settingsOpen && (
+        <SettingsDialog onClose={() => setSettingsOpen(false)} onSave={saveSettingsDialog} servers={savedHosts} settings={appSettings} />
       )}
     </div>
   );

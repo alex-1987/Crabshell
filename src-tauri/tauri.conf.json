@@ -16,8 +16,8 @@
         "title": "Crabshell",
         "width": 1180,
         "height": 760,
-        "minWidth": 820,
-        "minHeight": 560
+        "minWidth": 480,
+        "minHeight": 360
       }
     ],
     "security": {

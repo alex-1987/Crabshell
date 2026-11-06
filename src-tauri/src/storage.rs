@@ -9,6 +9,8 @@ use tauri::{AppHandle, Manager};
 const SERVERS_FILE: &str = "servers.json";
 const SETTINGS_FILE: &str = "settings.json";
 const MAX_SAVED_SERVERS: usize = 500;
+const MAX_APPEARANCES: usize = 100;
+pub(crate) const DEFAULT_APPEARANCE_ID: &str = "default";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +20,37 @@ pub(crate) struct ServerProfile {
     pub host: String,
     pub username: String,
     pub identity_file: String,
+    /// Empty means "use the default appearance".
+    #[serde(default)]
+    pub appearance_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Appearance {
+    pub id: String,
+    pub name: String,
+    pub font_size: u8,
+    pub foreground: String,
+    pub background: String,
+    pub cursor: String,
+    pub selection: String,
+    pub tab_color: String,
+}
+
+impl Appearance {
+    fn builtin_default() -> Self {
+        Self {
+            id: DEFAULT_APPEARANCE_ID.to_string(),
+            name: "Crabshell".to_string(),
+            font_size: 13,
+            foreground: "#d8ded2".to_string(),
+            background: "#10120f".to_string(),
+            cursor: "#c7e77a".to_string(),
+            selection: "#65734b".to_string(),
+            tab_color: "#c7e77a".to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -27,7 +60,16 @@ pub(crate) struct AppSettings {
     pub sidebar_collapsed: bool,
     pub copy_on_select: bool,
     pub confirm_multiline_paste: bool,
+    pub appearances: Vec<Appearance>,
+    pub default_appearance_id: String,
+    /// "system", "light" or "dark".
+    pub theme_mode: String,
+    /// UI zoom in percent; the terminal font size comes from the appearance instead.
+    pub ui_scale: u16,
 }
+
+const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
+const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -36,6 +78,10 @@ impl Default for AppSettings {
             sidebar_collapsed: false,
             copy_on_select: false,
             confirm_multiline_paste: true,
+            appearances: vec![Appearance::builtin_default()],
+            default_appearance_id: DEFAULT_APPEARANCE_ID.to_string(),
+            theme_mode: "dark".to_string(),
+            ui_scale: 100,
         }
     }
 }
@@ -64,6 +110,13 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     if !(210..=420).contains(&settings.sidebar_width) {
         settings.sidebar_width = AppSettings::default().sidebar_width;
     }
+    normalize_appearances(&mut settings);
+    if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
+        settings.theme_mode = AppSettings::default().theme_mode;
+    }
+    if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
+        settings.ui_scale = AppSettings::default().ui_scale;
+    }
 
     Ok(AppData {
         servers,
@@ -82,7 +135,71 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
     if !(210..=420).contains(&settings.sidebar_width) {
         return Err("The sidebar width is outside the supported range".to_string());
     }
+    if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
+        return Err("Unknown color scheme".to_string());
+    }
+    if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
+        return Err("The UI scale is outside the supported range".to_string());
+    }
+    validate_appearances(settings)?;
     write_json(app, SETTINGS_FILE, settings)
+}
+
+/// Older settings files have no appearances; make sure the built-in default always exists
+/// and the default id points at an existing appearance.
+fn normalize_appearances(settings: &mut AppSettings) {
+    if !settings
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id == DEFAULT_APPEARANCE_ID)
+    {
+        settings
+            .appearances
+            .insert(0, Appearance::builtin_default());
+    }
+    if !settings
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id == settings.default_appearance_id)
+    {
+        settings.default_appearance_id = DEFAULT_APPEARANCE_ID.to_string();
+    }
+}
+
+fn validate_appearances(settings: &AppSettings) -> Result<(), String> {
+    if settings.appearances.is_empty() || settings.appearances.len() > MAX_APPEARANCES {
+        return Err("The number of appearances is outside the supported range".to_string());
+    }
+    let mut ids = std::collections::HashSet::new();
+    for appearance in &settings.appearances {
+        let colors = [
+            &appearance.foreground,
+            &appearance.background,
+            &appearance.cursor,
+            &appearance.selection,
+            &appearance.tab_color,
+        ];
+        if appearance.id.is_empty()
+            || appearance.id.len() > 64
+            || !ids.insert(appearance.id.as_str())
+            || appearance.name.trim().is_empty()
+            || appearance.name.len() > 64
+            || !(8..=32).contains(&appearance.font_size)
+            || !colors.iter().all(|color| is_hex_color(color))
+        {
+            return Err("An appearance contains invalid fields".to_string());
+        }
+    }
+    if !ids.contains(settings.default_appearance_id.as_str()) {
+        return Err("The default appearance does not exist".to_string());
+    }
+    Ok(())
+}
+
+fn is_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn validate_servers(servers: &[ServerProfile]) -> Result<(), String> {
@@ -98,6 +215,7 @@ fn validate_servers(servers: &[ServerProfile]) -> Result<(), String> {
             || server.label.len() > 128
             || server.username.len() > 64
             || server.identity_file.len() > 4096
+            || server.appearance_id.len() > 64
         {
             return Err("A saved server profile contains invalid fields".to_string());
         }
@@ -146,7 +264,10 @@ fn temporary_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{temporary_path, validate_servers, AppSettings, ServerProfile};
+    use super::{
+        is_hex_color, normalize_appearances, temporary_path, validate_appearances,
+        validate_servers, AppSettings, Appearance, ServerProfile, DEFAULT_APPEARANCE_ID,
+    };
     use std::path::Path;
 
     #[test]
@@ -156,8 +277,8 @@ mod tests {
         assert!(!settings.sidebar_collapsed);
         assert!(!settings.copy_on_select);
         assert!(settings.confirm_multiline_paste);
-        assert!(!settings.copy_on_select);
-        assert!(settings.confirm_multiline_paste);
+        assert_eq!(settings.theme_mode, "dark");
+        assert_eq!(settings.ui_scale, 100);
     }
 
     #[test]
@@ -168,6 +289,7 @@ mod tests {
             host: String::new(),
             username: String::new(),
             identity_file: String::new(),
+            appearance_id: String::new(),
         };
         assert!(validate_servers(&[profile]).is_err());
     }
@@ -178,5 +300,56 @@ mod tests {
             temporary_path(Path::new("/tmp/servers.json")),
             Path::new("/tmp/servers.json.tmp")
         );
+    }
+
+    #[test]
+    fn old_server_files_without_appearance_still_load() {
+        let profile: ServerProfile = serde_json::from_str(
+            r#"{"id":"a","label":"","host":"h","username":"","identityFile":""}"#,
+        )
+        .unwrap();
+        assert!(profile.appearance_id.is_empty());
+    }
+
+    #[test]
+    fn old_settings_files_get_the_default_appearance() {
+        let mut settings: AppSettings =
+            serde_json::from_str(r#"{"sidebarWidth":300,"appearances":[]}"#).unwrap();
+        normalize_appearances(&mut settings);
+        assert_eq!(settings.appearances.len(), 1);
+        assert_eq!(settings.default_appearance_id, DEFAULT_APPEARANCE_ID);
+        assert!(validate_appearances(&settings).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_appearances() {
+        let mut settings = AppSettings::default();
+        settings.appearances.push(Appearance {
+            name: "Bad".to_string(),
+            foreground: "red".to_string(),
+            ..settings.appearances[0].clone()
+        });
+        assert!(
+            validate_appearances(&settings).is_err(),
+            "duplicate id or bad color"
+        );
+
+        let mut settings = AppSettings::default();
+        settings.appearances[0].font_size = 99;
+        assert!(validate_appearances(&settings).is_err());
+
+        let settings = AppSettings {
+            default_appearance_id: "missing".to_string(),
+            ..AppSettings::default()
+        };
+        assert!(validate_appearances(&settings).is_err());
+    }
+
+    #[test]
+    fn checks_hex_colors() {
+        assert!(is_hex_color("#a0B1c2"));
+        assert!(!is_hex_color("#abc"));
+        assert!(!is_hex_color("a0b1c2f"));
+        assert!(!is_hex_color("#gg0000"));
     }
 }

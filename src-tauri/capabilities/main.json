@@ -6,8 +6,11 @@
   "permissions": [
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:path:allow-join",
     "core:path:allow-resolve-directory",
+    "core:window:allow-theme",
     "dialog:allow-open"
   ]
 }

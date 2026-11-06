@@ -4,6 +4,33 @@ export type SavedHost = {
   host: string;
   username: string;
   identityFile: string;
+  /** Empty string means the default appearance. */
+  appearanceId: string;
+};
+
+export type Appearance = {
+  id: string;
+  name: string;
+  fontSize: number;
+  foreground: string;
+  background: string;
+  cursor: string;
+  selection: string;
+  tabColor: string;
+};
+
+export type ThemeMode = "system" | "light" | "dark";
+
+export type AppSettings = {
+  sidebarWidth: number;
+  sidebarCollapsed: boolean;
+  copyOnSelect: boolean;
+  confirmMultilinePaste: boolean;
+  appearances: Appearance[];
+  defaultAppearanceId: string;
+  themeMode: ThemeMode;
+  /** UI zoom in percent (terminal font size is set per appearance). */
+  uiScale: number;
 };
 
 export type SessionStatus = "disconnected" | "connecting" | "connected" | "disconnecting" | "failed";
@@ -26,6 +53,7 @@ export type TerminalTab = {
   paneTree: PaneNode;
   status: SessionStatus;
   notice: string;
+  appearance: Appearance;
 };
 
 export type TerminalSnapshot = {
