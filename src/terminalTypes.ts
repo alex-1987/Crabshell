@@ -22,12 +22,19 @@ export type Appearance = {
 import type { LanguageSetting } from "./i18n";
 
 export type ThemeMode = "system" | "light" | "dark";
+export type ClipboardReadMode = "ask" | "always" | "never";
 
 export type AppSettings = {
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   copyOnSelect: boolean;
   confirmMultilinePaste: boolean;
+  /** Plain mouse drags select text even when a program (e.g. micro) uses the mouse. */
+  forceMouseSelection: boolean;
+  /** Programs may set the clipboard with OSC 52 (write only, never read). */
+  allowClipboardWrite: boolean;
+  /** OSC 52 clipboard reads by programs (e.g. Ctrl+V in micro over SSH). */
+  clipboardRead: ClipboardReadMode;
   appearances: Appearance[];
   defaultAppearanceId: string;
   /** Appearance for local shell tabs; empty string means the default appearance. */
@@ -64,8 +71,33 @@ export type TerminalTab = {
   appearance: Appearance;
 };
 
+/** Text waiting for the multiline confirmation before it is pasted into a terminal. */
+export type PendingPaste = {
+  tabId: string;
+  text: string;
+  source: "clipboard" | "snippet";
+  /** Send Enter after pasting (snippet "insert and run"). */
+  execute: boolean;
+};
+
+/** Crabshell's own terminal context menu (replaces the WebView menu). */
+export type TerminalContextMenu = {
+  tabId: string;
+  x: number;
+  y: number;
+  hasSelection: boolean;
+  canPaste: boolean;
+};
+
+/** A program asked to read the clipboard (OSC 52) and waits for the user's decision. */
+export type PendingClipboardRead = {
+  tabId: string;
+};
+
 export type TerminalSnapshot = {
   tabs: TerminalTab[];
   activeTabId: string | null;
-  pendingPaste: { tabId: string; text: string } | null;
+  pendingPaste: PendingPaste | null;
+  contextMenu: TerminalContextMenu | null;
+  pendingClipboardRead: PendingClipboardRead | null;
 };

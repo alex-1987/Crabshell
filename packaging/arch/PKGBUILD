@@ -1,0 +1,46 @@
+# Builds a pacman package (Arch Linux, CachyOS, EndeavourOS, Manjaro, Garuda, ...)
+# from this source checkout. Run from this directory:
+#
+#   makepkg -si
+#
+# The version is read from src-tauri/tauri.conf.json, so it never needs to be bumped here.
+
+_root="$(realpath "${startdir}/../..")"
+
+pkgname=crabshell
+pkgver=$(sed -nE 's/^[[:space:]]*"version":[[:space:]]*"([^"]+)".*/\1/p' "${_root}/src-tauri/tauri.conf.json" | head -n1 | tr '-' '_')
+pkgrel=1
+pkgdesc="Local SSH manager and terminal built on the system OpenSSH client"
+arch=('x86_64' 'aarch64')
+url="https://github.com/alex-1987/Crabshell"
+license=('unknown')
+depends=('webkit2gtk-4.1' 'gtk3' 'openssh' 'hicolor-icon-theme')
+makedepends=('rust' 'cargo' 'nodejs' 'npm')
+# LTO flags from makepkg.conf break some Rust/C dependencies; Tauri strips its own symbols.
+options=('!lto' '!debug')
+
+build() {
+  cd "${_root}"
+  npm ci
+  # --no-bundle: only build the release binary (with embedded frontend), packaging happens below.
+  npm run tauri build -- --no-bundle
+}
+
+check() {
+  cd "${_root}/src-tauri"
+  cargo test --release --locked
+}
+
+package() {
+  cd "${_root}"
+  install -Dm755 src-tauri/target/release/crabshell "${pkgdir}/usr/bin/crabshell"
+  install -Dm644 packaging/arch/crabshell.desktop "${pkgdir}/usr/share/applications/crabshell.desktop"
+
+  local size
+  for size in 32 64 128; do
+    install -Dm644 "src-tauri/icons/${size}x${size}.png" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/crabshell.png"
+  done
+  install -Dm644 src-tauri/icons/128x128@2x.png "${pkgdir}/usr/share/icons/hicolor/256x256/apps/crabshell.png"
+  install -Dm644 src-tauri/icons/icon.png "${pkgdir}/usr/share/icons/hicolor/512x512/apps/crabshell.png"
+}

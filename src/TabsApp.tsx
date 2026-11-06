@@ -4,6 +4,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
 import { defaultSettings } from "./appearance";
 import SettingsDialog from "./SettingsDialog";
+import SnippetEditor from "./SnippetEditor";
+import SnippetPicker from "./SnippetPicker";
+import SnippetSidebar from "./SnippetSidebar";
+import { deleteSnippet, listSnippets, saveSnippet, type Snippet } from "./snippets";
+import TerminalContextMenu from "./TerminalContextMenu";
 import TerminalPane from "./TerminalPane";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
@@ -98,6 +103,13 @@ export default function TabsApp() {
   const [appearanceId, setAppearanceId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarNotice, setSidebarNotice] = useState("");
+  const [sidebarView, setSidebarView] = useState<"servers" | "snippets">("servers");
+  const [snippets, setSnippets] = useState<Snippet[]>([]);
+  const [snippetsReady, setSnippetsReady] = useState(false);
+  const [snippetError, setSnippetError] = useState("");
+  const [snippetNotice, setSnippetNotice] = useState("");
+  const [editingSnippet, setEditingSnippet] = useState<Snippet | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const sidebarWidthRef = useRef(sidebarWidth);
   const settingsRef = useRef<AppSettings>(defaultSettings);
   const resizingSidebarRef = useRef(false);
@@ -114,6 +126,67 @@ export default function TabsApp() {
 
   const terminalSnapshot = useSyncExternalStore(terminalStore.subscribe, terminalStore.getSnapshot);
   const activeTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.activeTabId) ?? null;
+  const canInsertSnippet = activeTab?.status === "connected";
+
+  useEffect(() => {
+    let mounted = true;
+    listSnippets()
+      .then((list) => {
+        if (!mounted) return;
+        setSnippets(list.snippets);
+        if (list.recovered) setSnippetNotice(t("snippets.recovered"));
+      })
+      .catch((error: unknown) => {
+        if (mounted) setSnippetError(t("snippets.loadFailed", { error: translateBackend(error) }));
+      })
+      .finally(() => {
+        if (mounted) setSnippetsReady(true);
+      });
+    terminalStore.onSnippetShortcut(() => setPickerOpen(true));
+    return () => {
+      mounted = false;
+      terminalStore.onSnippetShortcut(null);
+    };
+  }, []);
+
+  function insertSnippet(snippet: Snippet, execute: boolean) {
+    setPickerOpen(false);
+    terminalStore.insertSnippet(snippet.text, execute);
+  }
+
+  function closePicker() {
+    setPickerOpen(false);
+    terminalStore.focusActiveTerminal();
+  }
+
+  function manageSnippets() {
+    setPickerOpen(false);
+    setSidebarView("snippets");
+    if (sidebarCollapsed) toggleSidebar();
+  }
+
+  async function storeSnippet(snippet: Snippet) {
+    const next = await saveSnippet(snippet);
+    setSnippets(next);
+    setSnippetError("");
+    setSnippetNotice(t("snippets.savedNotice"));
+    setEditingSnippet(null);
+  }
+
+  function duplicateSnippet(snippet: Snippet) {
+    void storeSnippet({ ...snippet, id: crypto.randomUUID(), name: t("snippets.copySuffix", { name: snippet.name }).slice(0, 128) })
+      .catch((error: unknown) => setSnippetError(t("snippets.saveFailed", { error: translateBackend(error) })));
+  }
+
+  function removeSnippet(snippet: Snippet) {
+    deleteSnippet(snippet.id)
+      .then((next) => {
+        setSnippets(next);
+        setSnippetError("");
+        setSnippetNotice(t("snippets.deleted"));
+      })
+      .catch((error: unknown) => setSnippetError(t("snippets.saveFailed", { error: translateBackend(error) })));
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -299,33 +372,63 @@ export default function TabsApp() {
               <button aria-label={t("sidebar.hide")} className="icon-button sidebar-toggle" disabled={!storageReady} onClick={toggleSidebar} title={t("sidebar.hide")} type="button"><span aria-hidden="true">‹</span></button>
             </div>
             <div className="privacy-line"><span className="privacy-indicator" /><span>{t("sidebar.privacy")}</span></div>
-            <div className="server-list-heading">
-              <div><h1>{t("sidebar.servers")}</h1><span>{savedHosts.length}</span></div>
-              <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!storageReady || Boolean(storageError)} onClick={() => openEditor()} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
+            <div aria-label={t("sidebar.views")} className="sidebar-views" role="tablist">
+              <button aria-selected={sidebarView === "servers"} className="settings-section-tab" onClick={() => setSidebarView("servers")} role="tab" type="button">{t("sidebar.servers")} <span>{savedHosts.length}</span></button>
+              <button aria-selected={sidebarView === "snippets"} className="settings-section-tab" onClick={() => setSidebarView("snippets")} role="tab" type="button">{t("sidebar.snippets")} <span>{snippets.length}</span></button>
             </div>
-            {sidebarNotice && <div aria-live="polite" className="page-notice">{sidebarNotice}</div>}
-            <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
-              {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : savedHosts.map((server) => (
-                <div className="saved-server" key={server.id}>
-                  <button className="saved-server-main" disabled={!storageReady || Boolean(storageError)} onClick={() => openServer(server)} title={`${server.username ? `${server.username}@` : ""}${server.host}`} type="button">
-                    <span className="saved-server-name">{server.label || server.host}</span>
-                    <span className="saved-server-host">{server.username ? `${server.username}@` : ""}{server.host}</span>
-                    {server.identityFile && <span className="saved-server-key">{t("sidebar.key", { file: fileName(server.identityFile) })}</span>}
-                  </button>
-                  {confirmDeleteId === server.id ? (
-                    <div className="sidebar-delete-confirm" role="group" aria-label={t("sidebar.removeGroup", { name: server.label || server.host })}>
-                      <button className="text-action" onClick={() => setConfirmDeleteId(null)} type="button">{t("common.cancel")}</button>
-                      <button className="text-action text-danger" onClick={() => void removeHost(server.id)} type="button">{t("sidebar.remove")}</button>
-                    </div>
-                  ) : (
-                    <div className="saved-server-actions">
-                      <button aria-label={t("sidebar.editServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => openEditor(server)} title={t("sidebar.edit")} type="button"><span aria-hidden="true">✎</span></button>
-                      <button aria-label={t("sidebar.deleteServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => setConfirmDeleteId(server.id)} title={t("sidebar.delete")} type="button"><span aria-hidden="true">×</span></button>
-                    </div>
-                  )}
+            {sidebarView === "servers" ? (
+              <>
+                <div className="server-list-heading">
+                  <div><h1>{t("sidebar.servers")}</h1><span>{savedHosts.length}</span></div>
+                  <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!storageReady || Boolean(storageError)} onClick={() => openEditor()} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
                 </div>
-              ))}
-            </nav>
+                {sidebarNotice && <div aria-live="polite" className="page-notice">{sidebarNotice}</div>}
+                <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
+                  {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : savedHosts.map((server) => (
+                    <div className="saved-server" key={server.id}>
+                      <button className="saved-server-main" disabled={!storageReady || Boolean(storageError)} onClick={() => openServer(server)} title={`${server.username ? `${server.username}@` : ""}${server.host}`} type="button">
+                        <span className="saved-server-name">{server.label || server.host}</span>
+                        <span className="saved-server-host">{server.username ? `${server.username}@` : ""}{server.host}</span>
+                        {server.identityFile && <span className="saved-server-key">{t("sidebar.key", { file: fileName(server.identityFile) })}</span>}
+                      </button>
+                      {confirmDeleteId === server.id ? (
+                        <div className="sidebar-delete-confirm" role="group" aria-label={t("sidebar.removeGroup", { name: server.label || server.host })}>
+                          <button className="text-action" onClick={() => setConfirmDeleteId(null)} type="button">{t("common.cancel")}</button>
+                          <button className="text-action text-danger" onClick={() => void removeHost(server.id)} type="button">{t("sidebar.remove")}</button>
+                        </div>
+                      ) : (
+                        <div className="saved-server-actions">
+                          <button aria-label={t("sidebar.editServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => openEditor(server)} title={t("sidebar.edit")} type="button"><span aria-hidden="true">✎</span></button>
+                          <button aria-label={t("sidebar.deleteServer", { name: server.label || server.host })} className="icon-button row-icon-button" onClick={() => setConfirmDeleteId(server.id)} title={t("sidebar.delete")} type="button"><span aria-hidden="true">×</span></button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </nav>
+              </>
+            ) : (
+              <>
+                <div className="server-list-heading">
+                  <div><h1>{t("sidebar.snippets")}</h1><span>{snippets.length}</span></div>
+                  <button aria-label={t("snippets.add")} className="icon-button add-server-button" disabled={!snippetsReady || Boolean(snippetError)} onClick={() => { setSnippetNotice(""); setEditingSnippet({ id: "", name: "", text: "", tags: [] }); }} title={t("snippets.add")} type="button"><span aria-hidden="true">+</span></button>
+                </div>
+                {snippetNotice && <div aria-live="polite" className="page-notice">{snippetNotice}</div>}
+                <nav aria-label={t("snippets.saved")} className="saved-server-list">
+                  {!snippetsReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : snippetError ? <div aria-live="polite" className="sidebar-storage-error">{snippetError}</div> : (
+                    <SnippetSidebar
+                      canInsert={canInsertSnippet}
+                      disabled={!snippetsReady}
+                      onDelete={removeSnippet}
+                      onDuplicate={duplicateSnippet}
+                      onEdit={(snippet) => { setSnippetNotice(""); setEditingSnippet(snippet); }}
+                      onInsert={(snippet, execute) => insertSnippet(snippet, execute)}
+                      snippets={snippets}
+                    />
+                  )}
+                </nav>
+                <div className="snippet-sidebar-hint">{t("snippets.noPasswords")}</div>
+              </>
+            )}
             <div className="sidebar-bottom">
               <div className="open-ssh-badge"><span>SSH</span><div><strong>OpenSSH</strong><small>{t("sidebar.systemInstall")}</small></div></div>
               <div className="sidebar-meta">{t("sidebar.meta")}</div>
@@ -379,6 +482,7 @@ export default function TabsApp() {
               <button className="connect-button" onClick={() => void terminalStore.connect(activeTab.id)} type="button">{activeTab.kind === "local" ? t("topbar.restart") : t("topbar.reconnect")} <span aria-hidden="true">↻</span></button>
             )}
             <button className="disconnect-button" disabled={!activeTab || (activeTab.status !== "connected" && activeTab.status !== "connecting")} onClick={() => activeTab && void terminalStore.disconnect(activeTab.id)} type="button"><span aria-hidden="true">■</span> {activeTab?.kind === "local" ? t("topbar.stop") : t("topbar.disconnect")}</button>
+            <button aria-label={t("snippets.openPicker")} className="icon-button settings-button" onClick={() => setPickerOpen(true)} title={t("snippets.openPicker")} type="button"><span aria-hidden="true">{"{}"}</span></button>
             <button
               aria-label={t("topbar.themeToggle", { mode: themeModeLabel(appSettings.themeMode) })}
               className="icon-button settings-button theme-toggle"
@@ -440,7 +544,7 @@ export default function TabsApp() {
       </main>
 
       {terminalSnapshot.pendingPaste && (() => {
-        const text = terminalSnapshot.pendingPaste.text;
+        const { text, source, execute } = terminalSnapshot.pendingPaste;
         const lines = text.split(/\r\n|\r|\n/);
         const lineCount = text.endsWith("\n") || text.endsWith("\r") ? lines.length - 1 : lines.length;
         const targetTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.pendingPaste?.tabId);
@@ -449,16 +553,16 @@ export default function TabsApp() {
           <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") terminalStore.cancelPendingPaste(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) terminalStore.cancelPendingPaste(); }} role="presentation">
             <section aria-labelledby="paste-title" aria-modal="true" className="server-dialog paste-dialog" role="dialog">
               <header className="dialog-heading">
-                <div><div className="page-eyebrow">{t("paste.eyebrow")}</div><h2 id="paste-title">{t("paste.title")}</h2></div>
+                <div><div className="page-eyebrow">{source === "snippet" ? t("paste.snippetEyebrow") : t("paste.eyebrow")}</div><h2 id="paste-title">{source === "snippet" ? t("paste.snippetTitle") : t("paste.title")}</h2></div>
                 <button aria-label={t("paste.cancelLabel")} className="icon-button" onClick={() => terminalStore.cancelPendingPaste()} type="button">×</button>
               </header>
               <div className="form-footnote">
-                {t("paste.summary", { lines: lineCount, chars: text.length })} <strong>{targetTab ? titleOf(targetTab) : t("terminal.pane")}</strong>. {t("paste.warning")}
+                {t("paste.summary", { lines: lineCount, chars: text.length })} <strong>{targetTab ? titleOf(targetTab) : t("terminal.pane")}</strong>. {t("paste.warning")}{execute && <> <strong>{t("paste.runWarning")}</strong></>}
               </div>
               <pre className="paste-preview">{preview}</pre>
               <div className="editor-actions">
                 <button autoFocus className="button button-secondary" onClick={() => terminalStore.cancelPendingPaste()} type="button">{t("common.cancel")}</button>
-                <button className="button button-primary" onClick={() => terminalStore.confirmPendingPaste()} type="button">{t("paste.confirm")}</button>
+                <button className="button button-primary" onClick={() => terminalStore.confirmPendingPaste()} type="button">{execute ? t("paste.confirmRun") : t("paste.confirm")}</button>
               </div>
             </section>
           </div>
@@ -502,6 +606,33 @@ export default function TabsApp() {
             </form>
           </section>
         </div>
+      )}
+      {terminalSnapshot.pendingClipboardRead && (() => {
+        const targetTab = terminalSnapshot.tabs.find((tab) => tab.id === terminalSnapshot.pendingClipboardRead?.tabId);
+        return (
+          <div className="dialog-scrim" onKeyDown={(event) => { if (event.key === "Escape") terminalStore.answerClipboardRead("deny"); }} role="presentation">
+            <section aria-labelledby="clip-read-title" aria-modal="true" className="server-dialog paste-dialog" role="dialog">
+              <header className="dialog-heading">
+                <div><div className="page-eyebrow">{t("clipRead.eyebrow")}</div><h2 id="clip-read-title">{t("clipRead.title")}</h2></div>
+                <button aria-label={t("clipRead.deny")} className="icon-button" onClick={() => terminalStore.answerClipboardRead("deny")} type="button">×</button>
+              </header>
+              <div className="form-footnote">
+                {t("clipRead.text", { name: targetTab ? titleOf(targetTab) : t("terminal.pane") })} <strong>{t("clipRead.warning")}</strong> {t("clipRead.retry")}
+              </div>
+              <div className="editor-actions">
+                <button autoFocus className="button button-secondary" onClick={() => terminalStore.answerClipboardRead("deny")} type="button">{t("clipRead.deny")}</button>
+                <button className="button button-primary" onClick={() => terminalStore.answerClipboardRead("session")} type="button">{t("clipRead.session")}</button>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
+      {terminalSnapshot.contextMenu && <TerminalContextMenu key={`${terminalSnapshot.contextMenu.x},${terminalSnapshot.contextMenu.y}`} menu={terminalSnapshot.contextMenu} />}
+      {pickerOpen && (
+        <SnippetPicker canInsert={canInsertSnippet} onClose={closePicker} onInsert={insertSnippet} onManage={manageSnippets} snippets={snippets} />
+      )}
+      {editingSnippet && (
+        <SnippetEditor onClose={() => setEditingSnippet(null)} onSave={storeSnippet} snippet={editingSnippet} />
       )}
       {/* Rendered last so it stacks above the server dialog when opened from there. */}
       {settingsOpen && (

@@ -49,6 +49,38 @@ jobs:
         with:
           tagName: v__VERSION__             # __VERSION__ wird durch die App-Version ersetzt
           releaseName: 'Crabshell v__VERSION__'
-          releaseBody: 'Linux-Pakete (.deb, .rpm, .AppImage). Voraussetzung: OpenSSH-Client (ssh) ist installiert.'
+          releaseBody: 'Linux-Pakete: .deb (Debian, Ubuntu, Mint, Pop!_OS), .rpm (Fedora, openSUSE), .pkg.tar.zst (Arch, CachyOS, EndeavourOS, Manjaro) und .AppImage (alle anderen). Voraussetzung: OpenSSH-Client (ssh) ist installiert.'
           releaseDraft: true                # erst prüfen, dann selbst veröffentlichen
           prerelease: true                  # für 0.1.0 sinnvoll
+
+  # pacman-Paket für Arch-basierte Distributionen (Arch, CachyOS, EndeavourOS, Manjaro, ...).
+  # Gebaut wird in einem Arch-Container mit packaging/arch/PKGBUILD und anschließend an das
+  # Release-Draft angehängt, das der build-Job angelegt hat.
+  arch:
+    needs: build
+    if: ${{ !cancelled() }}   # auch wenn z. B. nur der arm64-Build fehlschlägt
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+
+    steps:
+      - name: Install build dependencies
+        run: pacman -Syu --noconfirm --needed git nodejs npm rust webkit2gtk-4.1 gtk3 openssh github-cli
+
+      - uses: actions/checkout@v7
+
+      - name: Build pacman package
+        run: |
+          # makepkg läuft nicht als root.
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          cd packaging/arch
+          sudo -H -u builder makepkg --force --noconfirm
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          gh release upload "v${version}" packaging/arch/*.pkg.tar.zst --clobber --repo "${{ github.repository }}"

@@ -5,14 +5,50 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
 import { t, translateBackend } from "./i18n";
-import type { Appearance, SavedHost, SessionEvent, SessionStatus, TabKind, TerminalSnapshot, TerminalTab } from "./terminalTypes";
+import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, TabKind, TerminalContextMenu, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
-const initialSnapshot: TerminalSnapshot = { tabs: [], activeTabId: null, pendingPaste: null };
+const initialSnapshot: TerminalSnapshot = { tabs: [], activeTabId: null, pendingPaste: null, contextMenu: null, pendingClipboardRead: null };
 
 type ClipboardPreferences = {
   copyOnSelect: boolean;
   confirmMultilinePaste: boolean;
+  forceMouseSelection: boolean;
+  allowClipboardWrite: boolean;
+  clipboardRead: ClipboardReadMode;
 };
+
+/** write_to_session accepts at most 64 KiB per call. */
+const MAX_WRITE_BYTES = 32 * 1024;
+
+function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}
+
+/** Upper bound for OSC 52 payloads (base64), so a program cannot flood the clipboard. */
+const MAX_OSC52_LENGTH = 1024 * 1024;
+
+/**
+ * Decodes an OSC 52 payload "<targets>;<base64>". Returns null for queries ("?"),
+ * which are refused so programs can never read the clipboard, and for invalid data.
+ */
+export function decodeOsc52(data: string): string | null {
+  const separator = data.indexOf(";");
+  if (separator < 0) return null;
+  const payload = data.slice(separator + 1);
+  if (payload === "?" || payload.length > MAX_OSC52_LENGTH) return null;
+  try {
+    const binary = atob(payload);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
 
 type TerminalRuntime = {
   terminal: Terminal;
@@ -24,6 +60,10 @@ type TerminalRuntime = {
   connectPromise: Promise<void> | null;
   closing: boolean;
   selectionTimer: number | null;
+  /** The user allowed OSC 52 clipboard reads for the current session. */
+  clipboardReadAllowed: boolean;
+  /** Keeps terminal input in order, e.g. a pasted snippet before the Enter that runs it. */
+  writeChain: Promise<void>;
 };
 
 class TerminalStore {
@@ -35,8 +75,14 @@ class TerminalStore {
   private clipboardPreferences: ClipboardPreferences = {
     copyOnSelect: false,
     confirmMultilinePaste: true,
+    forceMouseSelection: false,
+    allowClipboardWrite: true,
+    clipboardRead: "ask",
   };
-  private pendingPaste: { tabId: string; text: string } | null = null;
+  private pendingPaste: PendingPaste | null = null;
+  private snippetShortcutHandler: (() => void) | null = null;
+  private contextMenu: TerminalContextMenu | null = null;
+  private pendingClipboardRead: (PendingClipboardRead & { target: string }) | null = null;
   private appearances: Appearance[] = [builtinAppearance];
   private defaultAppearanceId = builtinAppearance.id;
   private localAppearanceId = "";
@@ -47,6 +93,135 @@ class TerminalStore {
   };
 
   getSnapshot = (): TerminalSnapshot => this.snapshot;
+
+  /** Called when Ctrl+Shift+S is pressed inside a terminal. */
+  onSnippetShortcut(handler: (() => void) | null): void {
+    this.snippetShortcutHandler = handler;
+  }
+
+  closeContextMenu(focus = true): void {
+    const menu = this.contextMenu;
+    if (!menu) return;
+    this.contextMenu = null;
+    this.publish();
+    if (focus) this.runtimes.get(menu.tabId)?.terminal.focus();
+  }
+
+  runContextAction(action: "copy" | "paste" | "selectAll" | "snippets"): void {
+    const menu = this.contextMenu;
+    if (!menu) return;
+    this.closeContextMenu(action !== "snippets");
+    const runtime = this.runtimes.get(menu.tabId);
+    if (!runtime) return;
+    if (action === "copy") void this.copySelection(menu.tabId);
+    else if (action === "paste") void this.pasteFromClipboard(menu.tabId);
+    else if (action === "selectAll") runtime.terminal.selectAll();
+    else this.snippetShortcutHandler?.();
+  }
+
+  /** Whether the active tab has a connected session that can receive input. */
+  canSendToActiveTab(): boolean {
+    return this.activeTabId !== null && this.canSendInput(this.activeTabId);
+  }
+
+  focusActiveTerminal(): void {
+    if (this.activeTabId) this.runtimes.get(this.activeTabId)?.terminal.focus();
+  }
+
+  /**
+   * Pastes a snippet into the active terminal (never sends it on its own). Trailing line
+   * breaks are removed first; multiline snippets always need a confirmation.
+   * With `execute`, Enter is sent afterwards. Returns false when no session is connected.
+   */
+  insertSnippet(text: string, execute: boolean): boolean {
+    const tabId = this.activeTabId;
+    const trimmed = text.replace(/[\r\n]+$/, "");
+    if (!tabId || !this.canSendInput(tabId)) {
+      if (tabId) this.updateTab(tabId, { notice: t("notice.snippetNoSession") });
+      return false;
+    }
+    if (!trimmed) return true;
+    if (/[\r\n]/.test(trimmed)) {
+      this.pendingPaste = { tabId, text: trimmed, source: "snippet", execute };
+      this.publish();
+      return true;
+    }
+    this.pasteNow(tabId, trimmed, execute);
+    return true;
+  }
+
+  private pasteNow(tabId: string, text: string, execute: boolean): void {
+    const runtime = this.runtimes.get(tabId);
+    if (!runtime || !this.canSendInput(tabId)) return;
+    // paste() applies bracketed paste mode and emits onData synchronously,
+    // so the Enter below is queued after the pasted text.
+    runtime.terminal.paste(text);
+    if (execute) this.sendInput(tabId, "\r");
+    runtime.terminal.focus();
+  }
+
+  /** Sends input to the session the same way keystrokes are sent. */
+  private sendInput(tabId: string, data: string): void {
+    const runtime = this.runtimes.get(tabId);
+    const sessionId = runtime?.sessionId;
+    if (!runtime || !sessionId || !this.canSendInput(tabId)) return;
+    const bytes = new TextEncoder().encode(data);
+    for (let offset = 0; offset < bytes.length; offset += MAX_WRITE_BYTES) {
+      const chunk = bytes.slice(offset, offset + MAX_WRITE_BYTES);
+      runtime.writeChain = runtime.writeChain
+        .then(() => invoke<void>("write_to_session", chunk, { headers: { "x-session-id": sessionId } }))
+        .catch((error: unknown) => this.updateTab(tabId, { notice: translateBackend(error) }));
+    }
+  }
+
+  /** OSC 52 query from a program: answer per the user's setting, or ask first. */
+  private handleClipboardRead(tabId: string, target: string): void {
+    const runtime = this.runtimes.get(tabId);
+    if (!runtime || !this.canSendInput(tabId)) return;
+    const mode = this.clipboardPreferences.clipboardRead;
+    if (mode === "never") {
+      this.replyClipboard(tabId, target, "");
+    } else if (mode === "always" || runtime.clipboardReadAllowed) {
+      void this.replyWithClipboard(tabId, target);
+    } else if (!this.pendingClipboardRead) {
+      this.pendingClipboardRead = { tabId, target };
+      this.publish();
+    }
+  }
+
+  /** "deny" answers with an empty clipboard; "session" allows reads until the session ends. */
+  answerClipboardRead(decision: "deny" | "session"): void {
+    const pending = this.pendingClipboardRead;
+    if (!pending) return;
+    this.pendingClipboardRead = null;
+    this.publish();
+    const runtime = this.runtimes.get(pending.tabId);
+    if (!runtime) return;
+    if (decision === "deny") {
+      this.replyClipboard(pending.tabId, pending.target, "");
+    } else {
+      runtime.clipboardReadAllowed = true;
+      // Programs that wait (e.g. Neovim) get the answer now. micro gives up after 200 ms and
+      // drops late answers, so the user presses Ctrl+V again; that one is answered at once.
+      void this.replyWithClipboard(pending.tabId, pending.target);
+      this.updateTab(pending.tabId, { notice: t("notice.clipboardReadAllowed") });
+    }
+    runtime.terminal.focus();
+  }
+
+  private async replyWithClipboard(tabId: string, target: string): Promise<void> {
+    try {
+      this.replyClipboard(tabId, target, (await readText()) ?? "");
+    } catch (error) {
+      this.replyClipboard(tabId, target, "");
+      this.updateTab(tabId, { notice: t("notice.pasteFailed", { error: translateBackend(error) }) });
+    }
+  }
+
+  private replyClipboard(tabId: string, target: string, text: string): void {
+    // Terminated with ST (ESC + backslash): tcell (micro) does not accept BEL here.
+    this.sendInput(tabId, `\x1b]52;${target};${text ? utf8ToBase64(text) : ""}\x1b\\`);
+  }
 
   setClipboardPreferences(preferences: ClipboardPreferences): void {
     this.clipboardPreferences = preferences;
@@ -116,7 +291,7 @@ class TerminalStore {
       return;
     }
     if (this.clipboardPreferences.confirmMultilinePaste && /[\r\n]/.test(text)) {
-      this.pendingPaste = { tabId, text };
+      this.pendingPaste = { tabId, text, source: "clipboard", execute: false };
       this.publish();
       return;
     }
@@ -126,11 +301,16 @@ class TerminalStore {
   confirmPendingPaste(): void {
     const pending = this.pendingPaste;
     if (!pending) return;
-    const runtime = this.runtimes.get(pending.tabId);
-    if (runtime && !runtime.closing) runtime.terminal.paste(pending.text);
     this.pendingPaste = null;
     this.publish();
-    runtime?.terminal.focus();
+    const runtime = this.runtimes.get(pending.tabId);
+    if (!runtime || runtime.closing) return;
+    if (this.canSendInput(pending.tabId)) {
+      this.pasteNow(pending.tabId, pending.text, pending.execute);
+    } else {
+      this.updateTab(pending.tabId, { notice: t(pending.source === "snippet" ? "notice.snippetNoSession" : "notice.pasteNoSession") });
+      runtime.terminal.focus();
+    }
   }
 
   cancelPendingPaste(): void {
@@ -200,9 +380,30 @@ class TerminalStore {
       connectPromise: null,
       closing: false,
       selectionTimer: null,
+      clipboardReadAllowed: false,
+      writeChain: Promise.resolve(),
     };
     this.runtimes.set(id, runtime);
     terminal.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event));
+    // OSC 52: programs (micro with clipboard = terminal, vim, tmux, ...) set the clipboard.
+    terminal.parser.registerOscHandler(52, (data) => {
+      if (this.runtimes.get(id) !== runtime) return true;
+      const [rawTarget, payload] = data.split(";", 2);
+      if (payload === "?") {
+        // Only answer for plain selection targets; never echo arbitrary program input.
+        this.handleClipboardRead(id, /^[cpqs0-7]{0,8}$/.test(rawTarget) && rawTarget ? rawTarget : "c");
+        return true;
+      }
+      if (!this.clipboardPreferences.allowClipboardWrite) return true;
+      const text = decodeOsc52(data);
+      // An empty payload means "clear"; ignore it rather than wiping the user's clipboard.
+      if (text) {
+        void writeText(text)
+          .then(() => this.updateTab(id, { notice: t("notice.programCopied") }))
+          .catch((error: unknown) => this.updateTab(id, { notice: t("notice.copyFailed", { error: translateBackend(error) }) }));
+      }
+      return true;
+    });
     terminal.onSelectionChange(() => {
       if (!this.clipboardPreferences.copyOnSelect) return;
       if (runtime.selectionTimer !== null) window.clearTimeout(runtime.selectionTimer);
@@ -218,11 +419,7 @@ class TerminalStore {
       }, 150);
     });
     terminal.onData((data) => {
-      if (this.runtimes.get(id) !== runtime || !this.canSendInput(id) || !runtime.sessionId) return;
-      const bytes = new TextEncoder().encode(data);
-      void invoke("write_to_session", bytes, {
-        headers: { "x-session-id": runtime.sessionId },
-      }).catch((error: unknown) => this.updateTab(id, { notice: translateBackend(error) }));
+      if (this.runtimes.get(id) === runtime) this.sendInput(id, data);
     });
 
     this.tabs = [
@@ -287,8 +484,64 @@ class TerminalStore {
     };
     element.addEventListener("paste", onNativePaste, true);
 
+    // Mouse handling runs in the capture phase, before xterm forwards events to programs
+    // that enabled mouse tracking (micro, htop, mc, ...).
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 2) {
+        // Right-click always belongs to the Crabshell menu, not to the program.
+        event.stopPropagation();
+        return;
+      }
+      if (
+        event.button === 0 &&
+        event.isTrusted &&
+        !event.shiftKey &&
+        this.clipboardPreferences.forceMouseSelection &&
+        terminal.modes.mouseTrackingMode !== "none" &&
+        event.target instanceof Element
+      ) {
+        // xterm selects instead of reporting the click when Shift is held, so replay the
+        // click with Shift set.
+        event.stopPropagation();
+        event.preventDefault();
+        event.target.dispatchEvent(new MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          detail: event.detail,
+          screenX: event.screenX,
+          screenY: event.screenY,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+          shiftKey: true,
+          button: event.button,
+          buttons: event.buttons,
+        }));
+      }
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.contextMenu = {
+        tabId,
+        x: event.clientX,
+        y: event.clientY,
+        hasSelection: terminal.hasSelection(),
+        canPaste: this.canSendInput(tabId),
+      };
+      this.publish();
+    };
+    element.addEventListener("mousedown", onMouseDown, true);
+    element.addEventListener("contextmenu", onContextMenu, true);
+
     return () => {
       element.removeEventListener("paste", onNativePaste, true);
+      element.removeEventListener("mousedown", onMouseDown, true);
+      element.removeEventListener("contextmenu", onContextMenu, true);
       if (runtime.element !== element) return;
       runtime.observer?.disconnect();
       runtime.observer = null;
@@ -306,6 +559,9 @@ class TerminalStore {
 
     const sessionId = crypto.randomUUID();
     runtime.sessionId = sessionId;
+    // Clipboard read permission only lasts for one session.
+    runtime.clipboardReadAllowed = false;
+    if (this.pendingClipboardRead?.tabId === tabId) this.pendingClipboardRead = null;
     runtime.terminal.reset();
     if (server) {
       const target = server.label ? `${server.label} (${server.host})` : `${server.username ? `${server.username}@` : ""}${server.host}`;
@@ -408,6 +664,8 @@ class TerminalStore {
     runtime.terminal.dispose();
     this.runtimes.delete(tabId);
     if (this.pendingPaste?.tabId === tabId) this.pendingPaste = null;
+    if (this.contextMenu?.tabId === tabId) this.contextMenu = null;
+    if (this.pendingClipboardRead?.tabId === tabId) this.pendingClipboardRead = null;
     this.tabs = this.tabs.filter((tab) => tab.id !== tabId);
     if (this.activeTabId === tabId) {
       this.activeTabId = this.tabs.at(-1)?.id ?? null;
@@ -449,6 +707,11 @@ class TerminalStore {
       if (activeTabId) void this.pasteFromClipboard(activeTabId);
       return false;
     }
+    if (event.shiftKey && key === "s") {
+      event.preventDefault();
+      this.snippetShortcutHandler?.();
+      return false;
+    }
     if (event.shiftKey && key === "t") {
       event.preventDefault();
       this.openLocalShell();
@@ -482,6 +745,8 @@ class TerminalStore {
       tabs: this.tabs,
       activeTabId: this.activeTabId,
       pendingPaste: this.pendingPaste,
+      contextMenu: this.contextMenu,
+      pendingClipboardRead: this.pendingClipboardRead ? { tabId: this.pendingClipboardRead.tabId } : null,
     };
     for (const listener of this.listeners) listener();
   }

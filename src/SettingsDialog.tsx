@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
-import type { AppSettings, Appearance, SavedHost, ThemeMode } from "./terminalTypes";
+import type { AppSettings, Appearance, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
 import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
 import { themeModeCycle, themeModeLabel, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
 
@@ -120,6 +120,23 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
               <input checked={draft.confirmMultilinePaste} onChange={(event) => setDraft({ ...draft, confirmMultilinePaste: event.target.checked })} type="checkbox" />
               <span>{t("settings.confirmPaste")}</span>
             </label>
+            <label className="sidebar-setting">
+              <input checked={draft.allowClipboardWrite} onChange={(event) => setDraft({ ...draft, allowClipboardWrite: event.target.checked })} type="checkbox" />
+              <span>{t("settings.allowClipboardWrite")}</span>
+            </label>
+            <div className="form-footnote">{t("settings.allowClipboardWriteHint")}</div>
+            <label className="field-label" htmlFor="clipboard-read">{t("settings.clipboardRead")}</label>
+            <select id="clipboard-read" onChange={(event) => setDraft({ ...draft, clipboardRead: event.target.value as ClipboardReadMode })} value={draft.clipboardRead}>
+              <option value="ask">{t("settings.clipboardReadAsk")}</option>
+              <option value="always">{t("settings.clipboardReadAlways")}</option>
+              <option value="never">{t("settings.clipboardReadNever")}</option>
+            </select>
+            <div className="form-footnote">{t("settings.clipboardReadHint")}</div>
+            <label className="sidebar-setting">
+              <input checked={draft.forceMouseSelection} onChange={(event) => setDraft({ ...draft, forceMouseSelection: event.target.checked })} type="checkbox" />
+              <span>{t("settings.forceMouseSelection")}</span>
+            </label>
+            <div className="form-footnote">{t("settings.forceMouseSelectionHint")}</div>
             <h3>{t("settings.designs")}</h3>
             <label className="field-label" htmlFor="default-appearance">{t("settings.defaultDesign")}</label>
             <select id="default-appearance" onChange={(event) => setDraft({ ...draft, defaultAppearanceId: event.target.value })} value={draft.defaultAppearanceId}>

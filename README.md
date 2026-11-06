@@ -13,21 +13,110 @@ Crabshell supports multiple locally saved server profiles and multiple terminal 
 - Light, dark or automatic (system) color scheme, toggled next to the gear icon; adjustable interface text size (80–150 %)
 - Designs per server profile: text and background color, cursor, selection, tab color and font size, managed via the gear icon in the top right
 - Clipboard: `Ctrl+Shift+C` copy, `Ctrl+Shift+V` paste, optional copy on select and confirmation for multiline paste (also applies to the context menu and middle click)
-- Shortcuts: `Ctrl+Shift+T` local shell, `Ctrl+Shift+W` close, `Ctrl+Tab` switch
+- Own right-click menu (copy, paste, select all, snippets) that also works in programs that take over the mouse, such as micro, htop or mc. There, `Shift`+drag selects text; an optional setting lets plain dragging select as well (those programs then no longer receive left clicks)
+- OSC 52 clipboard support: programs such as micro, vim/Neovim or tmux can copy into the local clipboard, also over SSH. Reading the clipboard (e.g. Ctrl+V in micro) asks first and can be allowed per session; see [micro over SSH](#micro-over-ssh)
+- Snippets: saved commands with name and tags, managed in the sidebar (new, edit, duplicate, delete) and inserted via a search picker (`Ctrl+Shift+S`). A snippet is only pasted into the active, connected terminal, never sent on its own; `Ctrl+Enter` (or ▶) pastes and runs it. Trailing line breaks are removed, and multiline snippets always show a preview to confirm. Snippets are stored unencrypted in `snippets.json`, so do not put passwords in them.
+- Shortcuts: `Ctrl+Shift+S` snippets, `Ctrl+Shift+T` local shell, `Ctrl+Shift+W` close, `Ctrl+Tab` switch
 - Host or SSH config alias and optional user per profile
 - Optional label and private key selection
-- Server profiles in `servers.json` and UI settings in `settings.json` in the app-specific Tauri config directory
+- Server profiles in `servers.json`, UI settings in `settings.json` and snippets in `snippets.json` in the app-specific Tauri config directory (`~/.config/dev.crabshell.app/`); files are written atomically, and an unreadable `snippets.json` is moved aside to `snippets.json.broken` instead of breaking the app
 - OpenSSH in a PTY with raw terminal input and output
 - Terminal resize, colors, disconnect and status messages
 - SSH sessions are cleaned up when the window closes
 
-The private key is never copied or read; OpenSSH only receives the selected file path. Existing browser profiles are migrated to `servers.json` on first start. Pane splits, SSH config import, snippets and SFTP are not included yet.
+The private key is never copied or read; OpenSSH only receives the selected file path. Existing browser profiles are migrated to `servers.json` on first start. Pane splits, SSH config import, snippet variables, snippet import/export and SFTP are not included yet.
 
-## Requirements
+## micro over SSH
 
-- Linux with the OpenSSH client (`ssh`) installed
-- Rust toolchain and Node.js with npm
-- Tauri Linux dependencies: WebKitGTK 4.1, GTK 3, `build-essential`, `curl`, `wget`, `file`, `libxdo-dev`, `libssl-dev`, `librsvg2-dev` and `libayatana-appindicator3-dev`
+To copy and paste between your computer and [micro](https://micro-editor.github.io) running on a server, tell micro to use the terminal clipboard (OSC 52). On the **server**, put this into `~/.config/micro/settings.json` (or run `Ctrl+E` → `set clipboard terminal` in micro):
+
+```json
+{
+    "clipboard": "terminal"
+}
+```
+
+- **Copy:** select text in micro and press `Ctrl+C`. micro sends it to Crabshell, which puts it into your local clipboard. The status bar shows "The program copied text to the clipboard."
+- **Paste with `Ctrl+V` in micro:** micro asks Crabshell for the local clipboard. The first time per session, Crabshell asks whether the server may read it (*Deny* or *Allow for this session*). micro only waits 200 ms for the answer, which is too short for the dialog, so press `Ctrl+V` **once more** after allowing it. From then on, `Ctrl+V` works straight away until you disconnect.
+- **Paste with `Ctrl+Shift+V`** (or right-click → Paste) always works and never gives the server access to your clipboard.
+
+Without `"clipboard": "terminal"`, micro uses its own clipboard on the server (or `xclip`/`wl-copy` there), which cannot reach your computer. Both settings, writing and reading the clipboard, can be changed under Settings → Clipboard (reading: *Ask*, *Always* or *Never*). Only allow reading for servers you trust, because the server receives whatever you copied, including passwords.
+
+`Shift`+drag selects text in the terminal even while micro uses the mouse, but it copies micro's line numbers too. Use micro's own selection with `Ctrl+C` instead, or turn the ruler off with `set ruler off`.
+
+## Installation
+
+Every release on GitHub contains ready-made packages for x86_64 (and arm64 where available). All of them need the OpenSSH client (`ssh`).
+
+| Distribution | Package | Install |
+| --- | --- | --- |
+| Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` | `sudo apt install ./Crabshell_*_amd64.deb` |
+| Fedora, openSUSE | `.rpm` | `sudo dnf install ./Crabshell-*.x86_64.rpm` or `sudo zypper install ./Crabshell-*.x86_64.rpm` |
+| Arch Linux, CachyOS, EndeavourOS, Manjaro | `.pkg.tar.zst` | `sudo pacman -U crabshell-*-x86_64.pkg.tar.zst` |
+| Any other distribution | `.AppImage` | `chmod +x Crabshell_*.AppImage && ./Crabshell_*.AppImage` |
+
+The `.deb` and `.rpm` packages are built on Ubuntu 22.04 and need glibc 2.35 or newer. The Arch package is built against current Arch Linux and is meant for rolling Arch-based distributions.
+
+## Building it yourself
+
+### 1. Install the build dependencies
+
+You need Rust (via [rustup](https://rustup.rs) or your distribution's package), Node.js 20 or newer with npm, the WebKitGTK 4.1 development files and the OpenSSH client.
+
+**Arch Linux, CachyOS, EndeavourOS, Manjaro**
+
+```bash
+sudo pacman -S --needed base-devel git rust nodejs npm webkit2gtk-4.1 gtk3 librsvg openssh
+```
+
+**Debian 12+, Ubuntu 22.04+, Linux Mint, Pop!_OS**
+
+```bash
+sudo apt install build-essential curl wget file git libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+  libayatana-appindicator3-dev librsvg2-dev openssh-client nodejs npm
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # if Rust is not installed yet
+```
+
+The `nodejs` package in older Ubuntu releases may be too old; in that case install Node.js LTS from [nodejs.org](https://nodejs.org) or via `nvm`.
+
+**Fedora**
+
+```bash
+sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file git libxdo-devel \
+  libappindicator-gtk3-devel librsvg2-devel openssh-clients nodejs npm rust cargo
+sudo dnf group install c-development
+```
+
+For other distributions, see the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
+
+### 2. Get the source
+
+```bash
+git clone https://github.com/alex-1987/Crabshell.git
+cd Crabshell
+npm ci
+```
+
+### 3a. Arch-based distributions: build a pacman package
+
+```bash
+cd packaging/arch
+makepkg -si        # builds, runs the tests and installs the package
+```
+
+The package is built from your local checkout, so local changes are included. The version comes from `src-tauri/tauri.conf.json`.
+
+### 3b. Other distributions: build .deb, .rpm and AppImage
+
+```bash
+npm run tauri build                              # all formats from tauri.conf.json
+npm run tauri build -- --bundles deb             # only one format (deb, rpm or appimage)
+npm run tauri build -- --no-bundle               # only the binary: src-tauri/target/release/crabshell
+```
+
+The packages end up in `src-tauri/target/release/bundle/` (`deb/`, `rpm/`, `appimage/`). Install them as shown in the table above.
+
+If the AppImage step fails while stripping libraries (common on very new distributions such as Arch), retry with `NO_STRIP=true npm run tauri build -- --bundles appimage`, or use a native package instead.
 
 ## Development
 
@@ -36,14 +125,17 @@ npm install
 npm run tauri dev
 ```
 
-## Checks and release
+## Checks
 
 ```bash
 npm run build
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check && cargo test
 SHELL=/bin/sh cargo test -- --ignored   # additionally spawns a real local shell (run inside src-tauri)
-cd .. && npm run tauri build
 ```
+
+## Releases
+
+Pushing a tag such as `v0.1.0` (or starting the `release` workflow manually) builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, and the pacman package in an Arch Linux container. Everything is attached to a draft release, which you publish yourself after checking it. Bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json` before tagging.
 
 ## Notes for contributors
 

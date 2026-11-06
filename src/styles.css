@@ -551,3 +551,54 @@ select option:checked { color: var(--c-192016); background: var(--acid); }
 .text-action:disabled { cursor: default; opacity: 0.4; }
 
 .tab-kind-local { flex: 0 0 auto; color: var(--tab-color, var(--acid)); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 9px; font-weight: 700; }
+
+/* Snippets */
+.sidebar-views { display: flex; gap: 4px; margin: 22px 0 0; border-bottom: 1px solid var(--line); }
+.sidebar-views .settings-section-tab { flex: 1; padding: 0 8px; }
+.sidebar-views .settings-section-tab span { margin-left: 4px; color: var(--c-85907b); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 9px; }
+.sidebar-views + .server-list-heading { margin-top: 16px; }
+.snippet-row .saved-server-actions .row-icon-button:last-child { color: var(--c-c28b7b); }
+.snippet-row .snippet-run { color: var(--acid); font-size: 11px; }
+.saved-server-actions .icon-button:disabled { cursor: default; opacity: 0.4; }
+.snippet-tags { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; overflow: hidden; }
+.snippet-tags span { padding: 1px 5px; border: 1px solid var(--c-394332); border-radius: 3px; color: var(--c-9aab79); background: var(--c-252c21); font-size: 9px; white-space: nowrap; }
+.snippet-tags .snippet-tag-lines { border-color: transparent; color: var(--c-e7bd72); background: transparent; padding-left: 0; }
+.snippet-sidebar-hint { margin-top: 10px; color: var(--c-75806f); font-size: 9px; line-height: 1.5; }
+.snippet-warning { margin: -6px 0 16px; color: var(--c-e7bd72); font-size: 10px; line-height: 1.5; }
+textarea.snippet-textarea {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 9px 11px;
+  resize: vertical;
+  border: 1px solid var(--c-3a4037);
+  border-radius: 5px;
+  outline: none;
+  color: var(--c-e9eee2);
+  background: var(--input);
+  font: 12px/1.45 "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+textarea.snippet-textarea::placeholder { color: var(--c-70796d); }
+textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e77a1c); }
+.snippet-picker { width: min(640px, calc((100vw - 40px) / var(--ui-zoom, 1))); }
+.snippet-search { margin-top: 10px; }
+.snippet-picker-notice { margin: 10px 0 0; }
+.snippet-results { display: flex; flex-direction: column; gap: 2px; max-height: 240px; margin: 10px 0; overflow-y: auto; }
+.snippet-result { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 4px 10px; padding: 7px 9px; border: 1px solid transparent; border-radius: 5px; color: var(--c-c8d0c0); background: transparent; cursor: pointer; text-align: left; font-size: 11px; }
+.snippet-result:hover { background: var(--c-272d25); }
+.snippet-result[aria-selected="true"] { border-color: var(--c-4a5442); background: var(--c-2a3127); }
+.snippet-result-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.snippet-result .snippet-tags { justify-content: flex-end; }
+.snippet-line { grid-column: 1 / -1; overflow: hidden; color: var(--c-96a08c); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.snippet-preview { max-height: 160px; }
+.snippet-keys { margin: 0 0 12px; }
+
+/* Terminal context menu */
+.context-menu { position: fixed; z-index: 60; display: flex; min-width: 210px; flex-direction: column; padding: 4px; border: 1px solid var(--c-454d40); border-radius: 6px; background: var(--c-20251f); box-shadow: 0 12px 34px var(--c-00000088); zoom: var(--ui-zoom, 1); }
+.context-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 18px; height: 28px; padding: 0 10px; border: 0; border-radius: 4px; color: var(--c-e2e8db); background: transparent; cursor: pointer; font-size: 11px; text-align: left; }
+.context-menu-item:hover:not(:disabled), .context-menu-item:focus-visible { outline: none; background: var(--c-2a3127); }
+.context-menu-item:disabled { cursor: default; opacity: 0.4; }
+.context-menu-item kbd { color: var(--c-85907b); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 9px; }

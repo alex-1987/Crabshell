@@ -1,4 +1,5 @@
 mod session;
+mod snippets;
 mod storage;
 
 use std::{
@@ -28,6 +29,36 @@ fn save_servers(app: tauri::AppHandle, servers: Vec<storage::ServerProfile>) -> 
 #[tauri::command]
 fn save_settings(app: tauri::AppHandle, settings: storage::AppSettings) -> Result<(), String> {
     storage::save_settings(&app, &settings)
+}
+
+fn snippets_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(storage::config_dir(app)?.join(snippets::SNIPPETS_FILE))
+}
+
+#[tauri::command]
+fn snippets_list(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, snippets::SnippetStore>,
+) -> Result<snippets::SnippetList, String> {
+    store.list(&snippets_path(&app)?)
+}
+
+#[tauri::command]
+fn snippets_save(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, snippets::SnippetStore>,
+    snippet: snippets::Snippet,
+) -> Result<Vec<snippets::Snippet>, String> {
+    store.save(&snippets_path(&app)?, snippet)
+}
+
+#[tauri::command]
+fn snippets_delete(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, snippets::SnippetStore>,
+    id: String,
+) -> Result<Vec<snippets::Snippet>, String> {
+    store.delete(&snippets_path(&app)?, &id)
 }
 
 /// The user's message locale, following the POSIX lookup order
@@ -404,6 +435,7 @@ fn close_session(session_id: String, state: tauri::State<'_, AppState>) -> Resul
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .manage(AppState::default())
+        .manage(snippets::SnippetStore::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -411,6 +443,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             system_locale,
             save_servers,
             save_settings,
+            snippets_list,
+            snippets_save,
+            snippets_delete,
             connect_host,
             open_local_shell,
             write_to_session,

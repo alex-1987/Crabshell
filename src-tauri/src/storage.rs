@@ -60,6 +60,12 @@ pub(crate) struct AppSettings {
     pub sidebar_collapsed: bool,
     pub copy_on_select: bool,
     pub confirm_multiline_paste: bool,
+    /// Plain mouse drags select text even when a program (e.g. micro) uses the mouse.
+    pub force_mouse_selection: bool,
+    /// Programs may set the clipboard with OSC 52 (write only, never read).
+    pub allow_clipboard_write: bool,
+    /// OSC 52 clipboard reads: "ask", "always" or "never".
+    pub clipboard_read: String,
     pub appearances: Vec<Appearance>,
     pub default_appearance_id: String,
     /// Appearance for local shell tabs; empty means the default appearance.
@@ -74,6 +80,7 @@ pub(crate) struct AppSettings {
 
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
 const LANGUAGES: [&str; 3] = ["system", "en", "de"];
+const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 
 impl Default for AppSettings {
@@ -83,6 +90,9 @@ impl Default for AppSettings {
             sidebar_collapsed: false,
             copy_on_select: false,
             confirm_multiline_paste: true,
+            force_mouse_selection: false,
+            allow_clipboard_write: true,
+            clipboard_read: "ask".to_string(),
             appearances: vec![Appearance::builtin_default()],
             default_appearance_id: DEFAULT_APPEARANCE_ID.to_string(),
             local_appearance_id: String::new(),
@@ -103,10 +113,7 @@ pub(crate) struct AppData {
 }
 
 pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|_| "Could not locate the application config directory".to_string())?;
+    let config_dir = config_dir(app)?;
     let servers_path = config_dir.join(SERVERS_FILE);
     let settings_path = config_dir.join(SETTINGS_FILE);
     let servers_file_exists = servers_path.exists();
@@ -123,6 +130,9 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     }
     if !LANGUAGES.contains(&settings.language.as_str()) {
         settings.language = AppSettings::default().language;
+    }
+    if !CLIPBOARD_READ_MODES.contains(&settings.clipboard_read.as_str()) {
+        settings.clipboard_read = AppSettings::default().clipboard_read;
     }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         settings.ui_scale = AppSettings::default().ui_scale;
@@ -150,6 +160,9 @@ pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(
     }
     if !LANGUAGES.contains(&settings.language.as_str()) {
         return Err("Unknown language".to_string());
+    }
+    if !CLIPBOARD_READ_MODES.contains(&settings.clipboard_read.as_str()) {
+        return Err("Unknown clipboard access mode".to_string());
     }
     if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
         return Err("The UI scale is outside the supported range".to_string());
@@ -249,6 +262,12 @@ fn validate_servers(servers: &[ServerProfile]) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map_err(|_| "Could not locate the application config directory".to_string())
+}
+
 fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
     match fs::read(path) {
         Ok(contents) => serde_json::from_slice(&contents)
@@ -264,21 +283,28 @@ fn write_json<T: Serialize + ?Sized>(
     file_name: &str,
     value: &T,
 ) -> Result<(), String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|_| "Could not locate the application config directory".to_string())?;
-    fs::create_dir_all(&config_dir)
-        .map_err(|_| "Could not create the application config directory".to_string())?;
+    write_json_atomic(&config_dir(app)?.join(file_name), value)
+}
 
-    let path = config_dir.join(file_name);
-    let temporary_path = temporary_path(&path);
+/// Writes to a temporary file next to the target and renames it over the target,
+/// so a crash mid-write never leaves a truncated data file behind.
+pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(
+    path: &Path,
+    value: &T,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|_| "Could not create the application config directory".to_string())?;
+    }
+    let temporary_path = temporary_path(path);
     let contents = serde_json::to_vec_pretty(value)
         .map_err(|_| "Could not encode local Crabshell data".to_string())?;
     fs::write(&temporary_path, contents)
         .map_err(|_| "Could not write local Crabshell data".to_string())?;
-    fs::rename(&temporary_path, &path)
-        .map_err(|_| "Could not replace local Crabshell data".to_string())
+    fs::rename(&temporary_path, path).map_err(|_| {
+        let _ = fs::remove_file(&temporary_path);
+        "Could not replace local Crabshell data".to_string()
+    })
 }
 
 fn temporary_path(path: &Path) -> PathBuf {
@@ -302,6 +328,9 @@ mod tests {
         assert!(!settings.sidebar_collapsed);
         assert!(!settings.copy_on_select);
         assert!(settings.confirm_multiline_paste);
+        assert!(!settings.force_mouse_selection);
+        assert!(settings.allow_clipboard_write);
+        assert_eq!(settings.clipboard_read, "ask");
         assert_eq!(settings.theme_mode, "dark");
         assert_eq!(settings.language, "system");
         assert_eq!(settings.ui_scale, 100);

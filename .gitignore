@@ -3,3 +3,8 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 *.log
+
+# makepkg output
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.pkg.tar.*

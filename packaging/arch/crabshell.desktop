@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Crabshell
+Comment=Local SSH manager and terminal
+Comment[de]=Lokaler SSH-Manager und Terminal
+Exec=crabshell
+Icon=crabshell
+Terminal=false
+Categories=Development;Network;System;TerminalEmulator;
+Keywords=ssh;terminal;shell;remote;
+StartupWMClass=crabshell
