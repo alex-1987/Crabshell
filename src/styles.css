@@ -284,6 +284,7 @@ input:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e77
 .tab-status-dot.status-connecting, .tab-status-dot.status-disconnecting { background: var(--c-e7bd72); }
 .tab-status-dot.status-failed { background: var(--coral); }
 .terminal-tab-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.terminal-tab-rename { flex: 1; min-width: 90px; height: 26px; margin: 4px 2px 4px 6px; padding: 0 7px; font-size: 10px; }
 .terminal-tab-close { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; margin-right: 3px; border: 0; border-radius: 4px; color: var(--c-788273); background: transparent; cursor: pointer; font-size: 16px; }
 .terminal-tab-close:hover { color: var(--c-f0a08a); background: var(--c-34251f); }
 .add-tab-button { width: 30px; height: 30px; align-self: center; flex: 0 0 auto; font-size: 20px; }
@@ -754,3 +755,12 @@ textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0
   .welcome-action { align-self: flex-start; }
 }
 .terminal-empty-guide span { max-width: none; }
+
+/* Tab right-click menu: quick colors and the custom color picker. */
+.tab-menu { width: 238px; }
+.tab-menu-colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding: 2px 10px 6px; }
+.tab-menu-swatch { height: 22px; padding: 0; border: 1px solid var(--c-3a4037); border-radius: 4px; cursor: pointer; }
+.tab-menu-swatch:hover, .tab-menu-swatch:focus-visible, .tab-menu-swatch[aria-pressed="true"] { border-color: var(--c-9ebc65); outline: none; box-shadow: 0 0 0 1px var(--c-9ebc65); }
+/* "Design color": diagonal stripe so it reads as "automatic", not as one more color. */
+.tab-menu-swatch-default { background-image: linear-gradient(135deg, transparent 45%, var(--c-20251f) 45%, var(--c-20251f) 55%, transparent 55%) !important; }
+.tab-menu-custom { padding: 2px 10px 6px; }

@@ -24,7 +24,7 @@ Gesammelte Ideen für kommende Versionen (Stand: 0.2.6, November 2026). Noch nic
 
 ## Komfort
 
-6. **Tabs umbenennen** per Doppelklick, z. B. „prod-db Logs“.
+6. ~~**Tabs umbenennen** per Doppelklick, z. B. „prod-db Logs“.~~ ✅ umgesetzt
 7. **Favoriten / zuletzt verwendet** oben in der Serverliste.
 8. **In allen Panes gleichzeitig tippen** (Broadcast) im Split View, mit deutlicher Warnanzeige.
 9. **Snippets importieren und exportieren** als JSON, auch zum Teilen.

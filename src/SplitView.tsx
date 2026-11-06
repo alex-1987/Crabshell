@@ -63,7 +63,7 @@ export default function SplitView({ tab, paneTitle, statusLabel }: SplitViewProp
             )}
             <div
               className={`terminal-pane-box${active ? " terminal-pane-active" : ""}`}
-              style={{ flex: `${index === 0 ? ratio : 1 - ratio} 1 0`, "--terminal-bg": pane.appearance.background, "--tab-color": pane.appearance.tabColor } as CSSProperties}
+              style={{ flex: `${index === 0 ? ratio : 1 - ratio} 1 0`, "--terminal-bg": pane.appearance.background, "--tab-color": tab.customColor || pane.appearance.tabColor } as CSSProperties}
             >
               {split && (
                 <div className="pane-header" onMouseDown={() => terminalStore.focusPane(pane.id, true)}>

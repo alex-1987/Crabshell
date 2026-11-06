@@ -11,6 +11,7 @@ const SERVERS_FILE: &str = "servers.json";
 const SETTINGS_FILE: &str = "settings.json";
 const SESSION_FILE: &str = "session.json";
 const MAX_SESSION_TABS: usize = 50;
+const MAX_TAB_TITLE_CHARS: usize = 64;
 const MAX_SAVED_SERVERS: usize = 500;
 const MAX_CATEGORY_CHARS: usize = 48;
 const MAX_APPEARANCES: usize = 100;
@@ -186,6 +187,10 @@ pub(crate) struct SessionTab {
     pub split_direction: String,
     pub split_kind: String,
     pub split_server_id: String,
+    /// Name the user gave the tab; empty means the automatic title.
+    pub title: String,
+    /// Tab color chosen by the user ("#rrggbb"); empty means the color of the design.
+    pub color: String,
 }
 
 /// Tabs that were open when Crabshell was last used (session.json).
@@ -210,7 +215,10 @@ fn valid_session_tab(tab: &SessionTab) -> bool {
         "row" | "column" => valid_session_pane(&tab.split_kind, &tab.split_server_id),
         _ => false,
     };
-    valid_session_pane(&tab.kind, &tab.server_id) && split_ok
+    let title_ok = tab.title.chars().count() <= MAX_TAB_TITLE_CHARS
+        && !tab.title.chars().any(char::is_control);
+    let color_ok = tab.color.is_empty() || is_hex_color(&tab.color);
+    valid_session_pane(&tab.kind, &tab.server_id) && split_ok && title_ok && color_ok
 }
 
 fn normalize_session(mut session: SessionState) -> SessionState {
@@ -643,6 +651,32 @@ mod tests {
         assert_eq!(session.tabs.len(), 2);
         assert_eq!(session.tabs[0].split_direction, "row");
         assert_eq!(session.tabs[1].split_server_id, "b");
+    }
+
+    #[test]
+    fn session_tab_titles_are_limited() {
+        let named = |title: String| super::SessionTab {
+            kind: "local".to_string(),
+            title,
+            ..super::SessionTab::default()
+        };
+        assert!(super::valid_session_tab(&named("prod-db Logs".to_string())));
+        assert!(super::valid_session_tab(&named("ä".repeat(64))));
+        assert!(!super::valid_session_tab(&named("x".repeat(65))));
+        assert!(!super::valid_session_tab(&named("bad\nname".to_string())));
+    }
+
+    #[test]
+    fn session_tab_colors_are_hex_or_empty() {
+        let colored = |color: &str| super::SessionTab {
+            kind: "local".to_string(),
+            color: color.to_string(),
+            ..super::SessionTab::default()
+        };
+        assert!(super::valid_session_tab(&colored("")));
+        assert!(super::valid_session_tab(&colored("#4f8fe8")));
+        assert!(!super::valid_session_tab(&colored("blue")));
+        assert!(!super::valid_session_tab(&colored("#4f8fe8ff")));
     }
 
     #[test]

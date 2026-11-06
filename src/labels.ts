@@ -11,9 +11,19 @@ export function paneTitle(pane: TerminalPaneState): string {
   return pane.kind === "local" ? t("tabs.localShell") : pane.title;
 }
 
-/** Tab label: the pane title, or both titles for a split tab. */
-export function titleOf(tab: TerminalTab): string {
+/** Automatic tab label: the pane title, or both titles for a split tab. */
+export function automaticTitleOf(tab: TerminalTab): string {
   return tab.panes.map(paneTitle).join(tab.split === "column" ? " / " : " | ");
+}
+
+/** Tab label: the name the user gave it, otherwise the automatic title. */
+export function titleOf(tab: TerminalTab): string {
+  return tab.customTitle || automaticTitleOf(tab);
+}
+
+/** Accent color of a tab: the user's choice, otherwise the design's tab color. */
+export function tabColorOf(tab: TerminalTab): string {
+  return tab.customColor || tab.appearance.tabColor;
 }
 
 /** "user@host" plus ":port" when it is not the default. */

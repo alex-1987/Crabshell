@@ -6,7 +6,7 @@ import AboutDialog from "./AboutDialog";
 import { defaultSettings } from "./appearance";
 import { ClipboardReadDialog, CloseConfirmDialog, PasteConfirmDialog } from "./ConfirmDialogs";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
-import { runningSessionCount, serverAddress, statusLabel, titleOf } from "./labels";
+import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabColorOf, titleOf } from "./labels";
 import { clearLegacyStorage, loadLegacyServers, loadLegacySettings, readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
 import ServerDialog from "./ServerDialog";
 import ServerSidebar, { type ServerFilters } from "./ServerSidebar";
@@ -16,6 +16,8 @@ import SnippetPanel from "./SnippetPanel";
 import SnippetPicker from "./SnippetPicker";
 import type { Snippet } from "./snippets";
 import SplitMenu from "./SplitMenu";
+import TabMenu from "./TabMenu";
+import TabRenameField from "./TabRenameField";
 import TerminalContextMenu from "./TerminalContextMenu";
 import TerminalTabPanel from "./TerminalTabPanel";
 import { terminalStore } from "./terminalStore";
@@ -66,6 +68,10 @@ export default function TabsApp() {
   const [settingsOpen, setSettingsOpen] = useState<{ appearanceId?: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  /** Right-click menu of a tab. */
+  const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  /** Tab whose name is being edited in the tab strip. */
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   /** Number of running sessions while the close confirmation is shown. */
   const [closeConfirm, setCloseConfirm] = useState<number | null>(null);
 
@@ -86,6 +92,7 @@ export default function TabsApp() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
   const canInsertSnippet = activeTab?.status === "connected";
   const tabDrag = useTabDrag(tabs, activeTabId, titleOf);
+  const menuTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined;
   const tabName = (tabId: string | undefined) => {
     const tab = tabs.find((item) => item.id === tabId);
     return tab ? titleOf(tab) : t("terminal.pane");
@@ -359,12 +366,24 @@ export default function TabsApp() {
 
         <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
           {tabs.map((tab) => (
-            <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} style={{ "--tab-color": tab.appearance.tabColor } as CSSProperties}>
-              <button aria-selected={tab.id === activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} role="tab" title={`${titleOf(tab)} · ${t("drag.hint")}`} type="button" {...tabDrag.tabHandlers(tab.id)}>
-                <span className={`tab-status-dot status-${tab.status}`} />
-                {tab.kind === "local" && <span aria-label={t("tabs.local")} className="tab-kind-local">&gt;_</span>}
-                <span className="terminal-tab-title">{titleOf(tab)}</span>
-              </button>
+            <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab) } as CSSProperties}>
+              {renamingTabId === tab.id ? (
+                <TabRenameField
+                  onDone={(title) => {
+                    setRenamingTabId(null);
+                    if (title !== null) terminalStore.renameTab(tab.id, title);
+                    terminalStore.focusActiveTerminal();
+                  }}
+                  placeholder={automaticTitleOf(tab)}
+                  value={tab.customTitle}
+                />
+              ) : (
+                <button aria-selected={tab.id === activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} onDoubleClick={() => setRenamingTabId(tab.id)} role="tab" title={`${titleOf(tab)} · ${t("tabs.renameHint")}, ${t("drag.hint")}`} type="button" {...tabDrag.tabHandlers(tab.id)}>
+                  <span className={`tab-status-dot status-${tab.status}`} />
+                  {tab.kind === "local" && <span aria-label={t("tabs.local")} className="tab-kind-local">&gt;_</span>}
+                  <span className="terminal-tab-title">{titleOf(tab)}</span>
+                </button>
+              )}
               <button aria-label={t("tabs.close", { name: titleOf(tab) })} className="terminal-tab-close" onClick={() => void terminalStore.closeTab(tab.id)} title={t("tabs.closeTitle")} type="button">×</button>
             </div>
           ))}
@@ -452,6 +471,17 @@ export default function TabsApp() {
       )}
       {closeConfirm !== null && <CloseConfirmDialog onCancel={() => setCloseConfirm(null)} onConfirm={(dontAsk) => void closeWindow(dontAsk)} running={closeConfirm} />}
       {tabDrag.overlay}
+      {tabMenu && menuTab && (
+        <TabMenu
+          onClose={() => setTabMenu(null)}
+          onCloseTab={() => { setTabMenu(null); void terminalStore.closeTab(menuTab.id); }}
+          onColor={(color) => terminalStore.setTabColor(menuTab.id, color)}
+          onRename={() => { setTabMenu(null); setRenamingTabId(menuTab.id); }}
+          tab={menuTab}
+          x={tabMenu.x}
+          y={tabMenu.y}
+        />
+      )}
       {splitMenu && activeTab && (
         <SplitMenu
           direction={splitMenu.direction}

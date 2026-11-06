@@ -39,6 +39,10 @@ export type SessionTab = {
   splitDirection?: SplitDirection | "";
   splitKind?: TabKind | "";
   splitServerId?: string;
+  /** Name the user gave the tab; empty or missing means the automatic title. */
+  title?: string;
+  /** Tab color chosen by the user; empty or missing means the color of the design. */
+  color?: string;
 };
 export type SessionState = { tabs: SessionTab[]; activeIndex: number };
 
@@ -109,6 +113,10 @@ export type TerminalTab = {
   /** Share of the first pane (0.15–0.85). */
   splitRatio: number;
   activePaneId: string;
+  /** Name the user gave the tab (double-click); empty means the automatic title from the panes. */
+  customTitle: string;
+  /** Tab color chosen by the user ("#rrggbb"); empty means the tab color of the design. */
+  customColor: string;
   // Mirrored from the active pane, so tab-level UI (title, status, reconnect) keeps working.
   kind: TabKind;
   title: string;

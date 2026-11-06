@@ -179,6 +179,8 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Saved server profiles with label, category, host or `~/.ssh/config` alias, user, port (default 22) and private key. Port 22 is not passed to `ssh`, so a `Port` from `~/.ssh/config` still applies to aliases.
 - Categories group the server list (collapsible). Click a category chip above the list to show only those servers; click it again to show all.
 - Every tab has its own SSH session or local shell. Tabs can be reconnected and closed, and you can switch with `Ctrl+Tab`.
+- Double-click a tab to rename it (e.g. "prod-db logs"). Enter saves, Escape cancels, an empty name goes back to the automatic title.
+- Right-click a tab for its menu: rename, pick a tab color (quick colors, a custom color or back to the design's color) and close. Name and color are kept when the tabs reopen on start.
 - Split view: show two terminals in one tab, side by side (`Ctrl+Shift+E`) or one above the other (`Ctrl+Shift+O`). The split buttons above the terminal let you choose what the new pane runs: the same server again, a local shell or another saved server. Drag the divider to resize (double-click resets it), switch the layout later, move between panes with a click or `Ctrl+Alt+Arrow`, and close a pane with its × or `Ctrl+Shift+W`.
 - Drag tabs with the mouse: drop them on the tab strip to reorder, or onto the terminal of another tab to put both side by side. The edge you drop on (left, right, top, bottom) decides where it goes; hovering over a tab while dragging brings it to the front. ⇱ in a pane's header moves it back into its own tab. Sessions keep running while you rearrange them.
 - Local shell via `+` or `Ctrl+Shift+T`: your login shell (`$SHELL`) in your home directory, PowerShell on Windows.
@@ -229,7 +231,7 @@ Everything is in `~/.config/dev.crabshell.app/` (Windows: `%APPDATA%\dev.crabshe
 | `servers.json` | Server profiles (the key is stored as a path only, never its contents) |
 | `settings.json` | Settings and designs |
 | `snippets.json` | Snippets. An unreadable file is moved aside to `snippets.json.broken` instead of breaking the app. |
-| `session.json` | Which tabs and split panes were open (tab type and server id only, never terminal contents) |
+| `session.json` | Which tabs and split panes were open (tab type, server id, tab name and color only, never terminal contents) |
 
 Not included yet: more than two panes per tab, SSH config import, snippet variables, snippet import/export and SFTP.
 
@@ -349,6 +351,15 @@ npm run tauri dev
 npm run build
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings && cargo check && cargo test
 SHELL=/bin/sh cargo test -- --ignored   # additionally spawns a real local shell (run inside src-tauri)
+```
+
+### UI tests (Linux)
+
+`scripts/e2e/` drives the real app through [tauri-driver](https://v2.tauri.app/develop/tests/webdriver/) and WebKitWebDriver: open a shell, rename a tab, pick a tab color and so on. The app runs with an empty temporary config directory, so your own servers and settings stay untouched; a Crabshell window opens briefly while the tests run.
+
+```bash
+cargo install tauri-driver --locked   # once; WebKitWebDriver ships with webkit2gtk (Arch) or webkit2gtk-driver (Debian/Fedora)
+npm run test:e2e                      # builds a debug app and runs the checks
 ```
 
 ### Releases

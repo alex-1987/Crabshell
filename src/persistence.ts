@@ -106,6 +106,8 @@ export function sessionTabsOf(tabs: TerminalTab[]): SessionState["tabs"] {
       splitDirection: secondValid ? tab.split ?? "row" : "",
       splitKind: secondValid ? second.kind : "",
       splitServerId: secondValid ? serverIdOf(second) : "",
+      title: tab.customTitle,
+      color: tab.customColor,
     };
   });
 }
@@ -122,6 +124,8 @@ export function restoreSession(session: SessionState, servers: SavedHost[]): voi
     }
     if (!tabId) continue;
     opened.push(tabId);
+    if (tab.title) terminalStore.renameTab(tabId, tab.title);
+    if (tab.color) terminalStore.setTabColor(tabId, tab.color);
     if (tab.splitDirection) {
       const server = tab.splitKind === "ssh" ? servers.find((item) => item.id === tab.splitServerId) : undefined;
       const target: SplitTarget | null = tab.splitKind === "local" ? { kind: "local" } : server ? { kind: "server", server } : null;

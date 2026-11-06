@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { t } from "./i18n";
 import { matchesServer } from "./ServerList";
 import { terminalStore } from "./terminalStore";
 import type { SavedHost, SplitDirection, SplitTarget } from "./terminalTypes";
+import { useFloatingMenu } from "./useFloatingMenu";
 
 type SplitMenuProps = {
   direction: SplitDirection;
@@ -18,49 +19,15 @@ type SplitMenuProps = {
 
 /** Chooses what the new split pane runs: the same session target, a local shell or a saved server. */
 export default function SplitMenu({ direction, x, y, sameLabel, servers, serverAddress, onChoose, onClose }: SplitMenuProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ left: x, top: y });
   const [query, setQuery] = useState("");
   const showSearch = servers.length > 6;
+  const { ref, position, handleMenuKey } = useFloatingMenu({ x, y, onClose, focusSelector: showSearch ? "input" : "button" });
   const matches = servers.filter((server) => matchesServer(server, query));
 
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const { width, height } = element.getBoundingClientRect();
-    setPosition({
-      left: Math.max(4, Math.min(x, window.innerWidth - width - 4)),
-      top: Math.max(4, Math.min(y, window.innerHeight - height - 4)),
-    });
-    element.querySelector<HTMLElement>(showSearch ? "input" : "button")?.focus();
-    // Only positioned once; the list may shrink while searching.
-  }, [x, y, showSearch]);
-
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
-    };
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("blur", onClose);
-    window.addEventListener("resize", onClose);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("blur", onClose);
-      window.removeEventListener("resize", onClose);
-    };
-  }, [onClose]);
-
   function handleKey(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      buttons[(index + step + buttons.length) % buttons.length]?.focus();
-    } else if (event.key === "Enter" && event.target instanceof HTMLInputElement && matches[0]) {
+    if (handleMenuKey(event)) return;
+    // Enter in the search field opens the first match.
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement && matches[0]) {
       event.preventDefault();
       onChoose({ kind: "server", server: matches[0] });
     }

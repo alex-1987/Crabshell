@@ -1,7 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
 import { t, translateBackend } from "./i18n";
@@ -23,8 +22,16 @@ type ClipboardPreferences = {
 const MAX_WRITE_BYTES = 32 * 1024;
 /** Each tab holds at most this many panes for now. */
 const MAX_PANES = 2;
+/** Same limit as the backend (session.json). */
+export const MAX_TAB_TITLE_CHARS = 64;
 export const MIN_SPLIT_RATIO = 0.15;
 export const MAX_SPLIT_RATIO = 0.85;
+
+/** A text field outside the terminals has the keyboard focus. */
+function isEditingText(): boolean {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && !active.closest(".xterm") && active.matches("input, textarea, select, [contenteditable='true']");
+}
 
 /** Live objects of one pane: its xterm instance and its session. */
 type PaneRuntime = {
@@ -42,6 +49,12 @@ type PaneRuntime = {
   clipboardReadAllowed: boolean;
   /** Keeps terminal input in order, e.g. a pasted snippet before the Enter that runs it. */
   writeChain: Promise<void>;
+  /**
+   * The session starts on the first fit, i.e. once the terminal is visible and has its real size.
+   * Started earlier, programs such as fastfetch format their output for 80 columns and it wraps
+   * badly after the resize. Tabs restored in the background therefore connect when first shown.
+   */
+  startOnFit: boolean;
 };
 
 /** Copies the active pane's fields onto the tab, so tab-level UI shows the focused pane. */
@@ -382,16 +395,12 @@ class TerminalStore {
 
   /** Opens a new tab running the user's local login shell. */
   openLocalShell(): string {
-    const tabId = this.createTab(null);
-    void this.connect(tabId);
-    return tabId;
+    return this.createTab(null);
   }
 
   /** Opens a new tab and connects it to the given server over SSH. */
   openServer(server: SavedHost): string {
-    const tabId = this.createTab(server);
-    void this.connect(tabId);
-    return tabId;
+    return this.createTab(server);
   }
 
   /** `server === null` creates a local shell tab. */
@@ -404,6 +413,8 @@ class TerminalStore {
       split: null,
       splitRatio: 0.5,
       activePaneId: pane.id,
+      customTitle: "",
+      customColor: "",
       kind: pane.kind,
       title: pane.title,
       server: pane.server,
@@ -439,9 +450,27 @@ class TerminalStore {
       ? withActivePane({ ...item, panes: [...item.panes, pane], split: direction, splitRatio: 0.5, activePaneId: pane.id })
       : item);
     this.publish();
-    void this.connectPane(pane.id);
     this.refitTab(tabId, pane.id);
     return pane.id;
+  }
+
+  /** Gives a tab its own name; an empty name goes back to the automatic title. */
+  renameTab(tabId: string, title: string): void {
+    const customTitle = [...title.replace(/[\u0000-\u001f\u007f]/g, "").trim()].slice(0, MAX_TAB_TITLE_CHARS).join("");
+    this.patchTab(tabId, { customTitle });
+  }
+
+  /** Own color for a tab ("#rrggbb"); an empty value goes back to the design's tab color. */
+  setTabColor(tabId: string, color: string): void {
+    this.patchTab(tabId, { customColor: /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "" });
+  }
+
+  /** Tab-level fields only (name, color); pane fields go through updatePane. */
+  private patchTab(tabId: string, patch: Partial<Pick<TerminalTab, "customTitle" | "customColor">>): void {
+    const tab = this.tabs.find((item) => item.id === tabId);
+    if (!tab || Object.entries(patch).every(([key, value]) => tab[key as keyof typeof patch] === value)) return;
+    this.tabs = this.tabs.map((item) => item.id === tabId ? { ...item, ...patch } : item);
+    this.publish();
   }
 
   setSplitDirection(tabId: string, direction: SplitDirection): void {
@@ -508,7 +537,7 @@ class TerminalStore {
     const remaining = tab.panes.filter((item) => item.id !== paneId);
     const index = this.tabs.findIndex((item) => item.id === tab.id);
     const updated = withActivePane({ ...tab, panes: remaining, split: null, activePaneId: remaining[0].id });
-    const created = withActivePane({ ...updated, id: newTabId, panes: [pane], activePaneId: pane.id, splitRatio: 0.5 });
+    const created = withActivePane({ ...updated, id: newTabId, panes: [pane], activePaneId: pane.id, splitRatio: 0.5, customTitle: "", customColor: "" });
     this.tabs = [...this.tabs.slice(0, index), updated, created, ...this.tabs.slice(index + 1)];
     this.activateTab(newTabId);
   }
@@ -549,11 +578,7 @@ class TerminalStore {
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    try {
-      terminal.loadAddon(new WebglAddon());
-    } catch {
-      // The DOM renderer remains available when WebGL is unavailable.
-    }
+    // No WebGL addon: under WebKitGTK it drew missing or pixelated glyphs until a tab switch.
 
     const runtime: PaneRuntime = {
       tabId,
@@ -568,6 +593,7 @@ class TerminalStore {
       selectionTimer: null,
       clipboardReadAllowed: false,
       writeChain: Promise.resolve(),
+      startOnFit: true,
     };
     this.runtimes.set(id, runtime);
     terminal.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event, id));
@@ -635,7 +661,9 @@ class TerminalStore {
         const tab = this.tabs.find((item) => item.id === tabId);
         for (const pane of tab?.panes ?? []) this.fitPane(pane.id);
       });
-      if (focusPaneId) this.runtimes.get(focusPaneId)?.terminal.focus();
+      // Do not steal the focus from a text field that opened meanwhile (e.g. renaming the tab
+      // by double-click: the first click activates the tab, the second opens the name field).
+      if (focusPaneId && !isEditingText()) this.runtimes.get(focusPaneId)?.terminal.focus();
     });
   }
 
@@ -653,7 +681,6 @@ class TerminalStore {
     if (!runtime.opened) {
       terminal.open(element);
       runtime.opened = true;
-      this.redrawWhenSettled(paneId);
     } else if (terminal.element && terminal.element.parentElement !== element) {
       // The pane moved to another tab (drag and drop, detach): move xterm's DOM along.
       element.appendChild(terminal.element);
@@ -925,29 +952,17 @@ class TerminalStore {
     if (this.activeTabId) this.activateTab(this.activeTabId);
   }
 
-  /**
-   * The WebGL renderer builds its glyph textures on the first frame, often before the font and
-   * the final pane size are known, which looks blurry or pixelated until something forces a
-   * redraw (switching tabs did). Rebuild them once the layout has settled.
-   */
-  private redrawWhenSettled(paneId: string): void {
-    const redraw = () => {
-      const runtime = this.runtimes.get(paneId);
-      if (!runtime?.element) return;
-      this.fitPane(paneId);
-      runtime.terminal.clearTextureAtlas();
-      runtime.terminal.refresh(0, runtime.terminal.rows - 1);
-    };
-    void document.fonts.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(redraw)));
-    // Safety net for late layout changes (panels opening, window still resizing on start).
-    window.setTimeout(redraw, 300);
-  }
-
   private fitPane(paneId: string): void {
     const runtime = this.runtimes.get(paneId);
     if (!runtime?.element || this.activeTabId !== runtime.tabId) return;
     try {
       runtime.fitAddon.fit();
+      if (runtime.startOnFit && runtime.terminal.cols >= 10 && runtime.terminal.rows >= 2) {
+        // The session starts with this size; no resize until the backend has opened it.
+        runtime.startOnFit = false;
+        void this.connectPane(paneId);
+        return;
+      }
       if (runtime.sessionId && runtime.terminal.cols >= 10 && runtime.terminal.rows >= 2) {
         void invoke("resize_session", {
           sessionId: runtime.sessionId,

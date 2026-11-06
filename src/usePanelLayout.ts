@@ -3,7 +3,7 @@ import { t } from "./i18n";
 import { terminalStore } from "./terminalStore";
 import type { AppSettings } from "./terminalTypes";
 
-export type Panel = "servers" | "snippets";
+type Panel = "servers" | "snippets";
 
 type PanelSettings = Pick<AppSettings, "sidebarWidth" | "sidebarCollapsed" | "snippetPanelOpen" | "snippetPanelWidth">;
 
