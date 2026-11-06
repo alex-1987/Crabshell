@@ -1,4 +1,5 @@
 mod session;
+mod storage;
 
 use std::{
     collections::HashMap,
@@ -13,6 +14,21 @@ use std::{
 use serde::{Deserialize, Serialize};
 use session::{validate_session_id, OpenSshSession, SshSession};
 use tauri::{ipc::InvokeResponseBody, Manager};
+
+#[tauri::command]
+fn load_persistent_data(app: tauri::AppHandle) -> Result<storage::AppData, String> {
+    storage::load_app_data(&app)
+}
+
+#[tauri::command]
+fn save_servers(app: tauri::AppHandle, servers: Vec<storage::ServerProfile>) -> Result<(), String> {
+    storage::save_servers(&app, &servers)
+}
+
+#[tauri::command]
+fn save_settings(app: tauri::AppHandle, settings: storage::AppSettings) -> Result<(), String> {
+    storage::save_settings(&app, &settings)
+}
 
 #[derive(Default)]
 struct AppState {
@@ -31,6 +47,7 @@ struct ConnectRequest {
     session_id: String,
     host: String,
     username: Option<String>,
+    identity_file: Option<String>,
     cols: u16,
     rows: u16,
 }
@@ -99,6 +116,7 @@ fn connect_host(
     let (session, mut reader) = match OpenSshSession::connect(
         &request.host,
         request.username.as_deref(),
+        request.identity_file.as_deref(),
         request.cols,
         request.rows,
     ) {
@@ -111,8 +129,7 @@ fn connect_host(
         }
     };
 
-    let session: Arc<Mutex<Box<dyn SshSession>>> =
-        Arc::new(Mutex::new(Box::new(session)));
+    let session: Arc<Mutex<Box<dyn SshSession>>> = Arc::new(Mutex::new(Box::new(session)));
     let stopping = Arc::new(AtomicBool::new(false));
     let entry = SessionEntry {
         session: Arc::clone(&session),
@@ -145,6 +162,7 @@ fn connect_host(
 
     let app_handle = app.clone();
     let session_id = request.session_id;
+    let worker_session_id = session_id.clone();
     let worker_session = Arc::clone(&session);
     let worker_stopping = Arc::clone(&stopping);
     let worker_state = on_state.clone();
@@ -171,7 +189,7 @@ fn connect_host(
 
             finish_session(
                 &app_handle,
-                &session_id,
+                &worker_session_id,
                 &worker_session,
                 &worker_stopping,
                 &worker_state,
@@ -322,7 +340,12 @@ fn close_session(session_id: String, state: tauri::State<'_, AppState>) -> Resul
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .manage(AppState::default())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            load_persistent_data,
+            save_servers,
+            save_settings,
             connect_host,
             write_to_session,
             resize_session,

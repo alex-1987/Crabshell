@@ -3,5 +3,11 @@
   "identifier": "main-capability",
   "description": "Minimal capability for the main Crabshell window",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+    "core:path:allow-join",
+    "core:path:allow-resolve-directory",
+    "dialog:allow-open"
+  ]
 }

@@ -1,13 +1,15 @@
-use std::io::{Read, Write};
-
-use portable_pty::{
-    native_pty_system, Child, CommandBuilder, MasterPty, PtySize, PtySystem,
+use std::{
+    io::{Read, Write},
+    path::Path,
 };
+
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 
 pub(crate) trait SshSession: Send {
     fn connect(
         host: &str,
         username: Option<&str>,
+        identity_file: Option<&str>,
         cols: u16,
         rows: u16,
     ) -> Result<(Self, Box<dyn Read + Send>), String>
@@ -29,6 +31,7 @@ impl SshSession for OpenSshSession {
     fn connect(
         host: &str,
         username: Option<&str>,
+        identity_file: Option<&str>,
         cols: u16,
         rows: u16,
     ) -> Result<(Self, Box<dyn Read + Send>), String> {
@@ -36,6 +39,7 @@ impl SshSession for OpenSshSession {
         if let Some(username) = username {
             validate_username(username)?;
         }
+        validate_identity_file(identity_file)?;
         validate_size(cols, rows)?;
 
         let pty_system = native_pty_system();
@@ -57,7 +61,7 @@ impl SshSession for OpenSshSession {
             .map_err(|_| "Could not open the terminal input stream".to_string())?;
         let child = pair
             .slave
-            .spawn_command(ssh_command(host, username))
+            .spawn_command(ssh_command(host, username, identity_file))
             .map_err(|_| "Could not start OpenSSH. Check that `ssh` is installed.".to_string())?;
 
         Ok((
@@ -127,16 +131,32 @@ impl SshSession for OpenSshSession {
     }
 }
 
-fn ssh_command(host: &str, username: Option<&str>) -> CommandBuilder {
+fn ssh_command(host: &str, username: Option<&str>, identity_file: Option<&str>) -> CommandBuilder {
     let mut command = CommandBuilder::new("ssh");
     command.arg("-tt");
     if let Some(username) = username {
         command.arg("-l");
         command.arg(username);
     }
+    if let Some(identity_file) = identity_file {
+        command.arg("-i");
+        command.arg(identity_file);
+        command.arg("-o");
+        command.arg("IdentitiesOnly=yes");
+    }
     command.arg("--");
     command.arg(host);
     command
+}
+
+fn validate_identity_file(identity_file: Option<&str>) -> Result<(), String> {
+    if let Some(identity_file) = identity_file {
+        let path = Path::new(identity_file);
+        if !path.is_absolute() || !path.is_file() {
+            return Err("The selected private key file is unavailable".to_string());
+        }
+    }
+    Ok(())
 }
 
 fn validate_host(host: &str) -> Result<(), String> {
@@ -186,7 +206,10 @@ pub(crate) fn validate_session_id(session_id: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ssh_command, validate_host, validate_session_id, validate_size, validate_username};
+    use super::{
+        ssh_command, validate_host, validate_identity_file, validate_session_id, validate_size,
+        validate_username,
+    };
 
     #[test]
     fn accepts_common_hosts_and_config_aliases() {
@@ -211,11 +234,11 @@ mod tests {
 
     #[test]
     fn builds_ssh_arguments_without_shell_interpolation() {
-        let command = ssh_command("node-a", Some("admin"));
+        let command = ssh_command("node-a", Some("admin"), None);
         let arguments: Vec<String> = command
             .get_argv()
             .iter()
-            .map(|argument| String::from_utf8_lossy(argument).into_owned())
+            .map(|argument| argument.to_string_lossy().into_owned())
             .collect();
         assert_eq!(
             arguments,
@@ -228,6 +251,39 @@ mod tests {
                 "node-a".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn passes_selected_identity_as_a_single_argument() {
+        let identity_file = "/home/alex/ssh keys/id_ed25519";
+        let command = ssh_command("node-a", Some("admin"), Some(identity_file));
+        let arguments: Vec<String> = command
+            .get_argv()
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            arguments,
+            vec![
+                "ssh".to_string(),
+                "-tt".to_string(),
+                "-l".to_string(),
+                "admin".to_string(),
+                "-i".to_string(),
+                identity_file.to_string(),
+                "-o".to_string(),
+                "IdentitiesOnly=yes".to_string(),
+                "--".to_string(),
+                "node-a".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn requires_selected_identity_path_to_be_an_existing_absolute_file() {
+        assert!(validate_identity_file(None).is_ok());
+        assert!(validate_identity_file(Some("relative-key")).is_err());
+        assert!(validate_identity_file(Some("/path/that/does/not/exist")).is_err());
     }
 
     #[test]

@@ -4,15 +4,19 @@ Lokaler SSH-Manager für den Desktop, gebaut mit Tauri 2, Rust und xterm.js. Cra
 
 ## Aktueller Stand
 
-Der erste Entwicklungsschritt unterstützt eine interaktive SSH-Sitzung:
+Crabshell unterstützt mehrere lokal gespeicherte Serverprofile und mehrere Terminal-Tabs mit jeweils eigener SSH-Sitzung:
 
-- Host oder SSH-Config-Alias und optionaler Benutzer
-- Lokales Speichern eines Hosts im App-Profil
+- Serverliste mit Hinzufügen, Bearbeiten und Entfernen von Profilen
+- Terminal-Tabs mit unabhängigen Sessions, Reconnect und Tab-Schließen
+- Tastenkürzel: `Ctrl+Shift+T` neuer Tab, `Ctrl+Shift+W` schließen, `Ctrl+Tab` wechseln
+- Host oder SSH-Config-Alias und optionaler Benutzer pro Profil
+- Optionales Label und Auswahl eines privaten Schlüssels
+- Serverprofile in `servers.json` und UI-Einstellungen in `settings.json` im app-spezifischen Tauri-Konfigurationsordner
 - OpenSSH in einer PTY mit roher Terminal-Ein- und Ausgabe
 - Terminal-Resize, Farben, Disconnect und Statusmeldungen
 - Aufräumen der SSH-Sitzung beim Schließen des Fensters
 
-Tabs, Split-Panes, SSH-Config-Import, Snippets und SFTP sind noch nicht enthalten.
+Der private Schlüssel wird nicht kopiert oder ausgelesen; OpenSSH erhält nur den ausgewählten Dateipfad. Vorhandene Browserprofile werden beim ersten Start in `servers.json` migriert. Pane-Splits, SSH-Config-Import, Snippets und SFTP sind noch nicht enthalten.
 
 ## Voraussetzungen
 
