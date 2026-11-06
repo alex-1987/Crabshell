@@ -95,6 +95,7 @@ struct SessionEntry {
 struct ConnectRequest {
     session_id: String,
     host: String,
+    port: Option<u16>,
     username: Option<String>,
     identity_file: Option<String>,
     cols: u16,
@@ -160,6 +161,7 @@ fn connect_host(
         || {
             PtySession::connect_ssh(
                 &request.host,
+                request.port,
                 request.username.as_deref(),
                 request.identity_file.as_deref(),
                 request.cols,

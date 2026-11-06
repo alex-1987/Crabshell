@@ -602,3 +602,7 @@ textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0
 .context-menu-item:hover:not(:disabled), .context-menu-item:focus-visible { outline: none; background: var(--c-2a3127); }
 .context-menu-item:disabled { cursor: default; opacity: 0.4; }
 .context-menu-item kbd { color: var(--c-85907b); font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 9px; }
+
+/* Host and port in the server dialog */
+.host-port-row { display: grid; grid-template-columns: minmax(0, 1fr) 86px; gap: 8px; }
+.host-port-row .port-input { text-align: center; }

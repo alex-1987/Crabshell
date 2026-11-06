@@ -25,19 +25,23 @@ impl PtySession {
     /// Starts OpenSSH for a saved host.
     pub(crate) fn connect_ssh(
         host: &str,
+        port: Option<u16>,
         username: Option<&str>,
         identity_file: Option<&str>,
         cols: u16,
         rows: u16,
     ) -> Result<(Self, SessionReader), String> {
         validate_host(host)?;
+        if port == Some(0) {
+            return Err("Enter a valid SSH port (1-65535)".to_string());
+        }
         if let Some(username) = username {
             validate_username(username)?;
         }
         validate_identity_file(identity_file)?;
         validate_size(cols, rows)?;
         Self::spawn(
-            ssh_command(host, username, identity_file),
+            ssh_command(host, port, username, identity_file),
             cols,
             rows,
             "Could not start OpenSSH. Check that `ssh` is installed.",
@@ -165,10 +169,20 @@ fn local_shell_command() -> CommandBuilder {
     command
 }
 
-fn ssh_command(host: &str, username: Option<&str>, identity_file: Option<&str>) -> CommandBuilder {
+fn ssh_command(
+    host: &str,
+    port: Option<u16>,
+    username: Option<&str>,
+    identity_file: Option<&str>,
+) -> CommandBuilder {
     let mut command = CommandBuilder::new("ssh");
     set_terminal_env(&mut command);
     command.arg("-tt");
+    // Port 22 is not passed, so a `Port` from ~/.ssh/config still applies to aliases.
+    if let Some(port) = port.filter(|port| *port != crate::storage::DEFAULT_SSH_PORT) {
+        command.arg("-p");
+        command.arg(port.to_string());
+    }
     if let Some(username) = username {
         command.arg("-l");
         command.arg(username);
@@ -273,7 +287,7 @@ mod tests {
 
     #[test]
     fn builds_ssh_arguments_without_shell_interpolation() {
-        let command = ssh_command("node-a", Some("admin"), None);
+        let command = ssh_command("node-a", Some(22), Some("admin"), None);
         let arguments: Vec<String> = command
             .get_argv()
             .iter()
@@ -293,9 +307,20 @@ mod tests {
     }
 
     #[test]
+    fn passes_non_default_ports_only() {
+        let command = ssh_command("node-a", Some(2222), None, None);
+        let arguments: Vec<String> = command
+            .get_argv()
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(arguments, vec!["ssh", "-tt", "-p", "2222", "--", "node-a"]);
+    }
+
+    #[test]
     fn passes_selected_identity_as_a_single_argument() {
         let identity_file = "/home/alex/ssh keys/id_ed25519";
-        let command = ssh_command("node-a", Some("admin"), Some(identity_file));
+        let command = ssh_command("node-a", None, Some("admin"), Some(identity_file));
         let arguments: Vec<String> = command
             .get_argv()
             .iter()

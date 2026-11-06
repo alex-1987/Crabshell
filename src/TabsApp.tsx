@@ -44,6 +44,7 @@ function normalizeSavedHost(value: unknown): SavedHost | null {
     id: typeof saved.id === "string" && saved.id ? saved.id : crypto.randomUUID(),
     label: typeof saved.label === "string" ? saved.label : "",
     host: saved.host,
+    port: typeof saved.port === "number" && Number.isInteger(saved.port) && saved.port >= 1 && saved.port <= 65535 ? saved.port : 22,
     username: typeof saved.username === "string" ? saved.username : "",
     identityFile: typeof saved.identityFile === "string" ? saved.identityFile : "",
     appearanceId: typeof saved.appearanceId === "string" ? saved.appearanceId : "",
@@ -82,6 +83,11 @@ function loadLegacySettings(): AppSettings {
   }
 }
 
+/** "user@host" plus ":port" when it is not the default. */
+function serverAddress(server: SavedHost): string {
+  return `${server.username ? `${server.username}@` : ""}${server.host}${server.port && server.port !== 22 ? `:${server.port}` : ""}`;
+}
+
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
 }
@@ -98,6 +104,7 @@ export default function TabsApp() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [host, setHost] = useState("");
+  const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
   const [identityFile, setIdentityFile] = useState("");
   const [appearanceId, setAppearanceId] = useState("");
@@ -231,6 +238,7 @@ export default function TabsApp() {
     setEditingId(server?.id ?? null);
     setLabel(server?.label ?? "");
     setHost(server?.host ?? "");
+    setPort(String(server?.port ?? 22));
     setUsername(server?.username ?? "");
     setIdentityFile(server?.identityFile ?? "");
     setAppearanceId(server?.appearanceId ?? "");
@@ -246,11 +254,17 @@ export default function TabsApp() {
       setSidebarNotice(t("notice.enterHost"));
       return;
     }
+    const savedPort = Number(port.trim() || "22");
+    if (!Number.isInteger(savedPort) || savedPort < 1 || savedPort > 65535) {
+      setSidebarNotice(t("notice.invalidPort"));
+      return;
+    }
 
     const server: SavedHost = {
       id: editingId ?? crypto.randomUUID(),
       label: label.trim(),
       host: savedHost,
+      port: savedPort,
       username: username.trim(),
       identityFile,
       // The design may have been deleted while this dialog was open.
@@ -386,9 +400,9 @@ export default function TabsApp() {
                 <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
                   {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : savedHosts.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : savedHosts.map((server) => (
                     <div className="saved-server" key={server.id}>
-                      <button className="saved-server-main" disabled={!storageReady || Boolean(storageError)} onClick={() => openServer(server)} title={`${server.username ? `${server.username}@` : ""}${server.host}`} type="button">
+                      <button className="saved-server-main" disabled={!storageReady || Boolean(storageError)} onClick={() => openServer(server)} title={serverAddress(server)} type="button">
                         <span className="saved-server-name">{server.label || server.host}</span>
-                        <span className="saved-server-host">{server.username ? `${server.username}@` : ""}{server.host}</span>
+                        <span className="saved-server-host">{serverAddress(server)}</span>
                         {server.identityFile && <span className="saved-server-key">{t("sidebar.key", { file: fileName(server.identityFile) })}</span>}
                       </button>
                       {confirmDeleteId === server.id ? (
@@ -579,8 +593,11 @@ export default function TabsApp() {
             <form className="editor-form" onSubmit={saveHost}>
               <label className="field-label" htmlFor="label">{t("server.label")} <span>{t("server.optional")}</span></label>
               <input autoComplete="off" autoFocus id="label" name="label" onChange={(event) => setLabel(event.target.value)} placeholder={t("server.labelPlaceholder")} value={label} />
-              <label className="field-label" htmlFor="host">{t("server.host")}</label>
-              <input autoComplete="off" id="host" name="host" onChange={(event) => setHost(event.target.value)} placeholder={t("server.hostPlaceholder")} spellCheck={false} value={host} required />
+              <label className="field-label" htmlFor="host">{t("server.host")} <span>{t("server.portLabel")}</span></label>
+              <div className="host-port-row">
+                <input autoComplete="off" id="host" name="host" onChange={(event) => setHost(event.target.value)} placeholder={t("server.hostPlaceholder")} spellCheck={false} value={host} required />
+                <input aria-label={t("server.port")} autoComplete="off" className="port-input" id="port" inputMode="numeric" max={65535} min={1} name="port" onChange={(event) => setPort(event.target.value.replace(/\D/g, "").slice(0, 5))} placeholder="22" title={t("server.portHint")} type="text" value={port} />
+              </div>
               <label className="field-label" htmlFor="username">{t("server.username")} <span>{t("server.optional")}</span></label>
               <input autoComplete="off" id="username" name="username" onChange={(event) => setUsername(event.target.value)} placeholder={t("server.usernamePlaceholder")} spellCheck={false} value={username} />
               <label className="field-label" htmlFor="identity-file">{t("server.privateKey")} <span>{t("server.optional")}</span></label>

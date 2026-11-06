@@ -38,6 +38,7 @@ const en = {
 
   // Notices
   "notice.enterHost": "Please enter a host name or SSH alias first.",
+  "notice.invalidPort": "Please enter a port between 1 and 65535.",
   "notice.serverUpdated": "Server updated.",
   "notice.serverSaved": "Server saved.",
   "notice.serverRemoved": "Server removed.",
@@ -104,6 +105,9 @@ const en = {
   "server.labelPlaceholder": "e.g. production server",
   "server.host": "Host or SSH alias",
   "server.hostPlaceholder": "e.g. dev-server",
+  "server.port": "Port",
+  "server.portLabel": "and port",
+  "server.portHint": "SSH port, default 22. With 22, a Port from ~/.ssh/config still applies.",
   "server.username": "User",
   "server.usernamePlaceholder": "from ~/.ssh/config",
   "server.privateKey": "Private key",
@@ -277,6 +281,7 @@ const de: Record<MessageKey, string> = {
   "sidebar.meta": "Keine Cloud · Kein Konto · Keine Telemetrie",
 
   "notice.enterHost": "Bitte zuerst einen Hostnamen oder SSH-Alias eingeben.",
+  "notice.invalidPort": "Bitte einen Port zwischen 1 und 65535 eingeben.",
   "notice.serverUpdated": "Server aktualisiert.",
   "notice.serverSaved": "Server gespeichert.",
   "notice.serverRemoved": "Server entfernt.",
@@ -339,6 +344,9 @@ const de: Record<MessageKey, string> = {
   "server.labelPlaceholder": "z. B. Produktivserver",
   "server.host": "Host oder SSH-Alias",
   "server.hostPlaceholder": "z. B. dev-server",
+  "server.port": "Port",
+  "server.portLabel": "und Port",
+  "server.portHint": "SSH-Port, Standard 22. Bei 22 gilt weiterhin ein Port aus ~/.ssh/config.",
   "server.username": "Benutzer",
   "server.usernamePlaceholder": "aus ~/.ssh/config",
   "server.privateKey": "Privater Schlüssel",
@@ -511,6 +519,7 @@ const backendMessages: Partial<Record<Language, Record<string, string>>> = {
     "Could not write local Crabshell data": "Lokale Crabshell-Daten konnten nicht geschrieben werden",
     "Could not write to the terminal": "Schreiben ins Terminal fehlgeschlagen",
     "Enter a valid host name, address, or SSH config alias": "Gib einen gültigen Hostnamen, eine Adresse oder einen SSH-Config-Alias ein",
+    "Enter a valid SSH port (1-65535)": "Gib einen gültigen SSH-Port ein (1–65535)",
     "Enter a valid SSH username": "Gib einen gültigen SSH-Benutzernamen ein",
     "Invalid session identifier": "Ungültige Sitzungskennung",
     "Missing session identifier": "Sitzungskennung fehlt",

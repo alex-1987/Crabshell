@@ -11,6 +11,11 @@ const SETTINGS_FILE: &str = "settings.json";
 const MAX_SAVED_SERVERS: usize = 500;
 const MAX_APPEARANCES: usize = 100;
 pub(crate) const DEFAULT_APPEARANCE_ID: &str = "default";
+pub(crate) const DEFAULT_SSH_PORT: u16 = 22;
+
+fn default_ssh_port() -> u16 {
+    DEFAULT_SSH_PORT
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +23,9 @@ pub(crate) struct ServerProfile {
     pub id: String,
     pub label: String,
     pub host: String,
+    /// Older profiles have no port and get the SSH default.
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
     pub username: String,
     pub identity_file: String,
     /// Empty means "use the default appearance".
@@ -250,6 +258,7 @@ fn validate_servers(servers: &[ServerProfile]) -> Result<(), String> {
             || server.id.len() > 64
             || server.host.trim().is_empty()
             || server.host.len() > 255
+            || server.port == 0
             || server.label.len() > 128
             || server.username.len() > 64
             || server.identity_file.len() > 4096
@@ -342,6 +351,7 @@ mod tests {
             id: String::new(),
             label: String::new(),
             host: String::new(),
+            port: 22,
             username: String::new(),
             identity_file: String::new(),
             appearance_id: String::new(),
@@ -364,6 +374,7 @@ mod tests {
         )
         .unwrap();
         assert!(profile.appearance_id.is_empty());
+        assert_eq!(profile.port, 22);
     }
 
     #[test]

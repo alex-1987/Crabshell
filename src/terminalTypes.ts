@@ -2,6 +2,8 @@ export type SavedHost = {
   id: string;
   label: string;
   host: string;
+  /** SSH port; 22 is not passed to ssh, so ~/.ssh/config can still set one. */
+  port: number;
   username: string;
   identityFile: string;
   /** Empty string means the default appearance. */

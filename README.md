@@ -17,7 +17,7 @@ Crabshell supports multiple locally saved server profiles and multiple terminal 
 - OSC 52 clipboard support: programs such as micro, vim/Neovim or tmux can copy into the local clipboard, also over SSH. Reading the clipboard (e.g. Ctrl+V in micro) asks first and can be allowed per session; see [micro over SSH](#micro-over-ssh)
 - Snippets: saved commands with name and tags, managed in the sidebar (new, edit, duplicate, delete) and inserted via a search picker (`Ctrl+Shift+S`). A snippet is only pasted into the active, connected terminal, never sent on its own; `Ctrl+Enter` (or ▶) pastes and runs it. Trailing line breaks are removed, and multiline snippets always show a preview to confirm. Snippets are stored unencrypted in `snippets.json`, so do not put passwords in them.
 - Shortcuts: `Ctrl+Shift+S` snippets, `Ctrl+Shift+T` local shell, `Ctrl+Shift+W` close, `Ctrl+Tab` switch
-- Host or SSH config alias and optional user per profile
+- Host or SSH config alias, port (default 22) and optional user per profile; port 22 is not passed to `ssh`, so a `Port` from `~/.ssh/config` still applies to aliases
 - Optional label and private key selection
 - Server profiles in `servers.json`, UI settings in `settings.json` and snippets in `snippets.json` in the app-specific Tauri config directory (`~/.config/dev.crabshell.app/`); files are written atomically, and an unreadable `snippets.json` is moved aside to `snippets.json.broken` instead of breaking the app
 - OpenSSH in a PTY with raw terminal input and output

@@ -564,7 +564,8 @@ class TerminalStore {
     if (this.pendingClipboardRead?.tabId === tabId) this.pendingClipboardRead = null;
     runtime.terminal.reset();
     if (server) {
-      const target = server.label ? `${server.label} (${server.host})` : `${server.username ? `${server.username}@` : ""}${server.host}`;
+      const address = server.port && server.port !== 22 ? `${server.host}:${server.port}` : server.host;
+      const target = server.label ? `${server.label} (${address})` : `${server.username ? `${server.username}@` : ""}${address}`;
       runtime.terminal.writeln(t("notice.connectingTo", { target }));
     }
     this.updateTab(tabId, { status: "connecting", notice: "" });
@@ -601,6 +602,7 @@ class TerminalStore {
         request: {
           sessionId,
           host: server.host,
+          port: server.port,
           username: server.username || null,
           identityFile: server.identityFile || null,
           ...size,
