@@ -897,10 +897,6 @@ export function setLanguage(language: Language): void {
   document.documentElement.lang = language;
 }
 
-export function getLanguage(): Language {
-  return currentLanguage;
-}
-
 export function t(key: MessageKey, params?: Record<string, string | number>): string {
   const template = dictionaries[currentLanguage][key] ?? en[key];
   if (!params) return template;

@@ -19,8 +19,6 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 
 ---
 
-
-
 ## Why Crabshell?
 
 - 🔒 **Everything stays on your device.** No cloud, no account, no telemetry. Crabshell runs your system `ssh`, so your keys, `ssh-agent`, `known_hosts` and `~/.ssh/config` just keep working. The app never reads or copies private keys.
@@ -34,8 +32,6 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 > **Crabshell is vibe-coded.** It was built largely through conversations with an AI coding assistant ([Claude Code](https://claude.com/claude-code)): I describe the features, test them, and decide what goes in. The code is checked with type checks, `clippy` and unit tests, but it has not had an independent security review. It is a hobby project, provided as is. Please read the code before trusting it with anything critical, and [open an issue](https://github.com/alex-1987/Crabshell/issues) if you find a problem.
 
 <img width="1912" height="1024" alt="crabby shell" src="https://github.com/user-attachments/assets/5b32970d-347d-49ca-a3b1-a697485e6615" />
-
-
 
 ## Installation
 
@@ -155,6 +151,8 @@ If both values are identical, the file arrived unchanged.
 
 ### First steps
 
+On the first start, the empty terminal area shows a short getting-started guide with the same steps (you can hide it there).
+
 1. Click **+** in the server list on the left and enter the host (or an alias from `~/.ssh/config`). User, port and key are optional.
 2. Click the server to open it in a new tab. On the first connection, OpenSSH asks you to confirm the server's host key in the terminal. Only accept it after you have checked the fingerprint.
 3. Open **{} Snippets** in the top bar to save commands you use often, and press `Ctrl+Shift+S` to search and paste them.
@@ -171,8 +169,9 @@ To **update**, install the newer package the same way. Your servers, snippets an
 | openSUSE | `sudo zypper remove crabshell` |
 | Arch, CachyOS, ... | `sudo pacman -R crabshell` |
 | AppImage | delete the file |
+| Windows | *Settings → Apps → Crabshell → Uninstall* |
 
-Your data is not removed with the app. To delete it as well, remove `~/.config/dev.crabshell.app/`.
+Your data is not removed with the app. To delete it as well, remove `~/.config/dev.crabshell.app/` (Windows: `%APPDATA%\dev.crabshell.app\`).
 
 ## Features
 
@@ -182,9 +181,10 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Every tab has its own SSH session or local shell. Tabs can be reconnected and closed, and you can switch with `Ctrl+Tab`.
 - Split view: show two terminals in one tab, side by side (`Ctrl+Shift+E`) or one above the other (`Ctrl+Shift+O`). The split buttons above the terminal let you choose what the new pane runs: the same server again, a local shell or another saved server. Drag the divider to resize (double-click resets it), switch the layout later, move between panes with a click or `Ctrl+Alt+Arrow`, and close a pane with its × or `Ctrl+Shift+W`.
 - Drag tabs with the mouse: drop them on the tab strip to reorder, or onto the terminal of another tab to put both side by side. The edge you drop on (left, right, top, bottom) decides where it goes; hovering over a tab while dragging brings it to the front. ⇱ in a pane's header moves it back into its own tab. Sessions keep running while you rearrange them.
-- Local shell via `+` or `Ctrl+Shift+T`: your login shell (`$SHELL`) in your home directory.
+- Local shell via `+` or `Ctrl+Shift+T`: your login shell (`$SHELL`) in your home directory, PowerShell on Windows.
 - Optionally reopen the tabs from last time on start, or always start with an empty workspace.
-- OpenSSH runs in a real PTY: full-screen programs, colors and resizing work as in any terminal. Sessions are cleaned up when the window closes.
+- OpenSSH runs in a real PTY: full-screen programs, colors and resizing work as in any terminal.
+- Closing the window while sessions are still running asks first ("3 sessions are still running"). Tick *Don't ask again* or turn it off in Settings. On close, every session is ended like in any other terminal (SIGHUP), so programs on the server stop unless they run in `tmux`, `screen` or with `nohup`.
 
 ### Snippets
 - Saved commands with name and tags, in their own panel on the right: new, edit, duplicate, delete.
@@ -203,7 +203,7 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Server list (left) and snippet panel (right) can each be shown, hidden and resized. If the window gets too narrow for both, the panel you opened last stays visible.
 - Single or double click for opening servers and pasting snippets, set in Settings.
 - Light, dark or system color scheme, and interface size 80–150 %.
-- Per-server designs: text, background, cursor, selection and tab color, and font size.
+- Per-server designs: text, background, cursor, selection and tab color, and font size, with a built-in color picker (hex input and quick colors).
 - English and German. The language follows the system locale by default.
 
 ### Shortcuts
@@ -217,12 +217,12 @@ These are the defaults. All terminal shortcuts can be changed under **⚙ Settin
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | Split right / split down (same session) |
 | `Ctrl+Alt+Arrow` | Move to the other pane |
 | `Ctrl+Shift+W` | Close pane (or the tab when it is not split) |
-| `Ctrl+Tab` | Next tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy / paste |
 
 ### Where your data lives
 
-Everything is in `~/.config/dev.crabshell.app/`, written atomically, so a crash never leaves a half-written file:
+Everything is in `~/.config/dev.crabshell.app/` (Windows: `%APPDATA%\dev.crabshell.app\`), written atomically, so a crash never leaves a half-written file:
 
 | File | Contents |
 | --- | --- |
@@ -353,7 +353,7 @@ SHELL=/bin/sh cargo test -- --ignored   # additionally spawns a real local shell
 
 ### Releases
 
-Pushing a tag such as `v0.2.1` builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, and the pacman package in an Arch Linux container. Everything is attached to a draft release for that tag, which you publish yourself after checking it.
+Pushing a tag such as `v0.2.1` builds the `.deb`, `.rpm` and AppImage packages on Ubuntu 22.04 for x86_64 and arm64, the Windows installer (`-setup.exe` and `.msi`), and the pacman package in an Arch Linux container. Everything is attached to a draft release for that tag, which you publish yourself after checking it.
 
 The version is taken from the tag (`v0.2.1` → `0.2.1`). A suffix such as `v0.3.0-beta.1` marks the release as a pre-release. You do not have to bump the version numbers in the repository first. To keep them in sync locally anyway, run `node scripts/set-version.mjs 0.2.1`, which updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`. Starting the workflow manually without a tag uses the version from `src-tauri/tauri.conf.json`.
 
@@ -362,6 +362,22 @@ git push origin main
 git tag v0.2.1
 git push origin v0.2.1
 ```
+
+### Project layout
+
+| Path | What lives there |
+| --- | --- |
+| `src/TabsApp.tsx` | App shell: loads data, wires panels, tabs and dialogs together |
+| `src/terminalStore.ts` | Tabs, panes, xterm.js instances, sessions, clipboard and shortcuts (outside React) |
+| `src/ServerSidebar.tsx`, `src/ServerList.tsx`, `src/ServerDialog.tsx` | Server list, search, categories, add/edit dialog |
+| `src/SnippetPanel.tsx`, `src/SnippetSidebar.tsx`, `src/SnippetPicker.tsx`, `src/SnippetEditor.tsx`, `src/useSnippets.ts` | Snippets |
+| `src/TerminalTabPanel.tsx`, `src/SplitView.tsx`, `src/SplitMenu.tsx`, `src/useTabDrag.tsx` | Terminal area, split view, tab drag and drop |
+| `src/SettingsDialog.tsx`, `src/ShortcutList.tsx`, `src/ColorField.tsx` | Settings, shortcut editor, color picker |
+| `src/Dialog.tsx`, `src/ConfirmDialogs.tsx` | Shared dialog frame; paste, clipboard and close confirmations |
+| `src/usePanelLayout.ts`, `src/persistence.ts`, `src/labels.ts`, `src/osc52.ts` | Panel sizes, session/migration helpers, display texts, OSC 52 |
+| `src-tauri/src/sessions.rs`, `src-tauri/src/session.rs` | Running sessions and their commands; PTY, `ssh` and shell startup |
+| `src-tauri/src/storage.rs`, `src-tauri/src/snippets.rs` | Validated JSON files in the config directory |
+| `src-tauri/src/desktop.rs` | AppImage menu entry and icons |
 
 ### Notes for contributors
 

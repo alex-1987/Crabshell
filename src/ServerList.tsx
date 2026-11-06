@@ -3,12 +3,12 @@ import { t } from "./i18n";
 import type { SavedHost } from "./terminalTypes";
 
 /** Key used for servers without a category (categories are trimmed, so it never collides). */
-export const UNCATEGORIZED = " ";
+const UNCATEGORIZED = " ";
 
 type Group = { key: string; label: string; servers: SavedHost[] };
 
 /** Groups servers by category: named categories alphabetically, servers without one last. Order inside a group is kept. */
-export function groupServers(servers: SavedHost[]): Group[] {
+function groupServers(servers: SavedHost[]): Group[] {
   const groups = new Map<string, Group>();
   for (const server of servers) {
     const key = server.category || UNCATEGORIZED;

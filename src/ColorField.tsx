@@ -11,7 +11,7 @@ const PRESETS = [
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
-export function normalizeHex(input: string): string | null {
+function normalizeHex(input: string): string | null {
   let value = input.trim().replace(/^#/, "").toLowerCase();
   if (/^[0-9a-f]{3}$/.test(value)) value = value.split("").map((c) => c + c).join("");
   return /^[0-9a-f]{6}$/.test(value) ? `#${value}` : null;

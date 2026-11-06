@@ -5,6 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
 import { t, translateBackend } from "./i18n";
+import { decodeOsc52, encodeOsc52 } from "./osc52";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
@@ -24,36 +25,6 @@ const MAX_WRITE_BYTES = 32 * 1024;
 const MAX_PANES = 2;
 export const MIN_SPLIT_RATIO = 0.15;
 export const MAX_SPLIT_RATIO = 0.85;
-
-function utf8ToBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-  }
-  return btoa(binary);
-}
-
-/** Upper bound for OSC 52 payloads (base64), so a program cannot flood the clipboard. */
-const MAX_OSC52_LENGTH = 1024 * 1024;
-
-/**
- * Decodes an OSC 52 payload "<targets>;<base64>". Returns null for queries ("?"),
- * which are refused so programs can never read the clipboard, and for invalid data.
- */
-export function decodeOsc52(data: string): string | null {
-  const separator = data.indexOf(";");
-  if (separator < 0) return null;
-  const payload = data.slice(separator + 1);
-  if (payload === "?" || payload.length > MAX_OSC52_LENGTH) return null;
-  try {
-    const binary = atob(payload);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return null;
-  }
-}
 
 /** Live objects of one pane: its xterm instance and its session. */
 type PaneRuntime = {
@@ -291,7 +262,7 @@ class TerminalStore {
 
   private replyClipboard(paneId: string, target: string, text: string): void {
     // Terminated with ST (ESC + backslash): tcell (micro) does not accept BEL here.
-    this.sendInput(paneId, `\x1b]52;${target};${text ? utf8ToBase64(text) : ""}\x1b\\`);
+    this.sendInput(paneId, encodeOsc52(target, text));
   }
 
   setClipboardPreferences(preferences: ClipboardPreferences): void {
@@ -682,6 +653,7 @@ class TerminalStore {
     if (!runtime.opened) {
       terminal.open(element);
       runtime.opened = true;
+      this.redrawWhenSettled(paneId);
     } else if (terminal.element && terminal.element.parentElement !== element) {
       // The pane moved to another tab (drag and drop, detach): move xterm's DOM along.
       element.appendChild(terminal.element);
@@ -951,6 +923,24 @@ class TerminalStore {
     }
     this.publish();
     if (this.activeTabId) this.activateTab(this.activeTabId);
+  }
+
+  /**
+   * The WebGL renderer builds its glyph textures on the first frame, often before the font and
+   * the final pane size are known, which looks blurry or pixelated until something forces a
+   * redraw (switching tabs did). Rebuild them once the layout has settled.
+   */
+  private redrawWhenSettled(paneId: string): void {
+    const redraw = () => {
+      const runtime = this.runtimes.get(paneId);
+      if (!runtime?.element) return;
+      this.fitPane(paneId);
+      runtime.terminal.clearTextureAtlas();
+      runtime.terminal.refresh(0, runtime.terminal.rows - 1);
+    };
+    void document.fonts.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(redraw)));
+    // Safety net for late layout changes (panels opening, window still resizing on start).
+    window.setTimeout(redraw, 300);
   }
 
   private fitPane(paneId: string): void {
