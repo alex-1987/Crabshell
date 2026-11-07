@@ -507,7 +507,7 @@ textarea.snippet-textarea:focus { border-color: var(--accent); }
    One slim tab bar on top; below it the terminal fills everything, without frame or status bar. */
 .workspace { display: flex; flex-direction: column; min-width: 0; height: 100%; min-height: 0; overflow: hidden; background: var(--terminal); container-type: inline-size; container-name: workspace; }
 
-.tabbar { display: flex; flex: 0 0 32px; align-items: center; gap: 2px; min-width: 0; height: 32px; padding: 0 4px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.tabbar { display: flex; flex: 0 0 32px; align-items: center; gap: 2px; min-width: 0; height: 32px; padding: 0 4px; background: var(--bg); }
 .tabbar-button { position: relative; display: grid; width: 28px; height: 26px; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 4px; color: var(--text-muted); background: transparent; cursor: pointer; font-size: 14px; line-height: 1; }
 .tabbar-button:hover:not(:disabled) { color: var(--text); background: var(--hover); }
 .tabbar-button[aria-pressed="true"] { color: var(--accent); }
@@ -519,9 +519,13 @@ textarea.snippet-textarea:focus { border-color: var(--accent); }
 
 .terminal-tabs { display: flex; min-width: 0; flex: 0 1 auto; align-items: stretch; height: 100%; overflow-x: auto; scrollbar-width: none; }
 .terminal-tabs::-webkit-scrollbar { display: none; }
-.terminal-tab { display: flex; min-width: 90px; max-width: 200px; align-items: center; height: 100%; border-bottom: 2px solid transparent; color: var(--text-muted); }
-.terminal-tab:hover { color: var(--text); }
-.terminal-tab-active { border-bottom-color: var(--tab-color, var(--accent)); color: var(--text); }
+/* Every tab shows its color as a line on top. The active one has the terminal's background, so it
+   merges with the terminal below (the bar has no bottom line), plus side borders and bold text. */
+.terminal-tab { position: relative; display: flex; min-width: 90px; max-width: 200px; align-items: center; align-self: flex-end; height: calc(100% - 3px); border: 1px solid transparent; border-top: 2px solid var(--tab-color, var(--accent)); border-bottom: 0; border-radius: 4px 4px 0 0; color: var(--text-muted); }
+.terminal-tab + .terminal-tab { margin-left: 2px; }
+.terminal-tab:hover { color: var(--text); background: var(--hover); }
+.terminal-tab-active, .terminal-tab-active:hover { height: calc(100% - 2px); border-right-color: var(--border); border-left-color: var(--border); color: var(--text); background: var(--terminal-bg, var(--terminal)); }
+.terminal-tab-active .terminal-tab-title { font-weight: 600; }
 .terminal-tab-select { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; height: 100%; padding: 0 4px 0 10px; border: 0; color: inherit; background: transparent; cursor: pointer; touch-action: none; }
 .terminal-tab-title { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .tab-status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--text-faint); }
@@ -602,3 +606,9 @@ input, .key-picker-button, .key-picker-clear { height: 32px; }
 .editor-actions .button { min-width: 90px; height: 30px; }
 .snippet-warning { margin: 6px 0 4px; }
 
+.tabbar-separator { width: 1px; height: 16px; margin: 0 4px; background: var(--border); }
+.connection-test { margin: 10px 0 0; padding: 6px 9px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.connection-test-ok { border-color: var(--accent); color: var(--text); }
+.connection-test-failed { border-color: var(--danger); color: var(--text); }
+/* "Test" sits on the left, the save/connect buttons on the right. */
+.editor-actions .editor-actions-start { order: -1; margin-right: auto; }

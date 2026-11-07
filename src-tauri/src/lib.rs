@@ -1,3 +1,4 @@
+mod conntest;
 mod desktop;
 mod fonts;
 mod session;
@@ -98,6 +99,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Size, position (not on Wayland, where the compositor decides), maximized and
+        // fullscreen of the window, saved on close and restored on start (.window-state.json).
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             load_persistent_data,
             save_session,
@@ -106,6 +110,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             desktop_integration_remove,
             system_locale,
             fonts::system_fonts,
+            conntest::test_connection,
             save_servers,
             save_settings,
             snippets_list,

@@ -2,7 +2,7 @@
   "name": "crabshell",
   "private": true,
   "license": "MIT OR Apache-2.0",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "type": "module",
   "scripts": {
     "dev": "vite",

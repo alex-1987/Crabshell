@@ -94,11 +94,16 @@ export function writeWelcomeHidden(hidden: boolean): void {
   }
 }
 
-/** Open tabs as stored in session.json: local shells and server ids, never connection details. */
-export function sessionTabsOf(tabs: TerminalTab[]): SessionState["tabs"] {
-  const serverIdOf = (pane: TerminalPaneState) => pane.kind === "ssh" ? pane.server?.id ?? "" : "";
+/**
+ * Open tabs as stored in session.json: local shells and ids of saved servers, never connection
+ * details. Connections that were not saved ("Connect only") are left out: null for such a tab,
+ * and a split half running one is dropped.
+ */
+export function sessionTabsOf(tabs: TerminalTab[], savedServerIds: ReadonlySet<string>): (SessionState["tabs"][number] | null)[] {
+  const serverIdOf = (pane: TerminalPaneState) => pane.kind === "ssh" && pane.server && savedServerIds.has(pane.server.id) ? pane.server.id : "";
   return tabs.map((tab) => {
     const [first, second] = tab.panes;
+    if (first.kind === "ssh" && !serverIdOf(first)) return null;
     const secondValid = second && (second.kind === "local" || serverIdOf(second));
     return {
       kind: first.kind,

@@ -164,9 +164,9 @@ fn set_terminal_env(command: &mut CommandBuilder) {
 }
 
 #[cfg(not(windows))]
-const SSH_MISSING: &str = "Could not start OpenSSH. Check that `ssh` is installed.";
+pub(crate) const SSH_MISSING: &str = "Could not start OpenSSH. Check that `ssh` is installed.";
 #[cfg(windows)]
-const SSH_MISSING: &str =
+pub(crate) const SSH_MISSING: &str =
     "Could not start OpenSSH. Install the OpenSSH client (Settings → System → Optional features).";
 
 /// Unix: the login shell ($SHELL, passwd entry, /bin/sh). Windows: PowerShell 7 (`pwsh`) when
@@ -238,7 +238,7 @@ fn validate_identity_file(identity_file: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_host(host: &str) -> Result<(), String> {
+pub(crate) fn validate_host(host: &str) -> Result<(), String> {
     if host.is_empty()
         || host.len() > 255
         || host.starts_with('-')
@@ -251,7 +251,7 @@ fn validate_host(host: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_username(username: &str) -> Result<(), String> {
+pub(crate) fn validate_username(username: &str) -> Result<(), String> {
     if username.is_empty()
         || username.len() > 64
         || username.starts_with('-')

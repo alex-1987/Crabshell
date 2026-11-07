@@ -15,7 +15,7 @@ import SnippetEditor from "./SnippetEditor";
 import SnippetPanel from "./SnippetPanel";
 import SnippetPicker from "./SnippetPicker";
 import type { Snippet } from "./snippets";
-import SplitMenu from "./SplitMenu";
+import TargetMenu from "./TargetMenu";
 import TabMenu from "./TabMenu";
 import TabRenameField from "./TabRenameField";
 import TerminalContextMenu from "./TerminalContextMenu";
@@ -49,6 +49,10 @@ export default function TabsApp() {
   const [welcomeHidden, setWelcomeHidden] = useState(readWelcomeHidden);
   /** Chooser for what a new split pane runs, anchored at a button or the context menu. */
   const [splitMenu, setSplitMenu] = useState<{ direction: SplitDirection; x: number; y: number } | null>(null);
+  /** "New connection" dialog from the + menu: connect without saving (or save and connect). */
+  const [connectDialog, setConnectDialog] = useState<{ saveConnects: boolean; category: string } | null>(null);
+  /** Chooser for a new tab (+ button or Ctrl+Shift+N): local shell or a saved server. */
+  const [newTabMenu, setNewTabMenu] = useState<{ x: number; y: number } | null>(null);
   /** Settings dialog: null = closed; with an appearance id it opens on the Designs tab with that design selected. */
   const [settingsOpen, setSettingsOpen] = useState<{ appearanceId?: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -122,12 +126,14 @@ export default function TabsApp() {
   }, []);
 
   // Remember open tabs (local shells and server ids, nothing else) for the next start.
-  const sessionKey = JSON.stringify([sessionTabsOf(tabs), tabs.findIndex((tab) => tab.id === activeTabId)]);
+  const restorable = sessionTabsOf(tabs, new Set(savedHosts.map((server) => server.id)));
+  const activeIndex = restorable.slice(0, tabs.findIndex((tab) => tab.id === activeTabId) + 1).filter(Boolean).length - 1;
+  const sessionKey = JSON.stringify([restorable.filter(Boolean), activeIndex]);
   useEffect(() => {
     if (!sessionRestored) return;
     const [sessionTabs, activeIndex] = JSON.parse(sessionKey) as [SessionState["tabs"], number];
     const session: SessionState = appSettings.restoreTabs
-      ? { tabs: sessionTabs.filter((tab) => tab.kind === "local" || tab.serverId), activeIndex: Math.max(0, activeIndex) }
+      ? { tabs: sessionTabs, activeIndex: Math.max(0, activeIndex) }
       : { tabs: [], activeIndex: 0 };
     const timer = window.setTimeout(() => void invoke("save_session", { session }).catch(() => undefined), 300);
     return () => window.clearTimeout(timer);
@@ -152,14 +158,18 @@ export default function TabsApp() {
   requestSplitRef.current = requestSplit;
   const toggleServersRef = useRef(panels.toggleServers);
   toggleServersRef.current = panels.toggleServers;
+  const requestNewTabRef = useRef(requestNewTab);
+  requestNewTabRef.current = requestNewTab;
   useEffect(() => {
     terminalStore.onSnippetShortcut(() => setPickerOpen(true));
     terminalStore.onSplitShortcut((direction, at) => requestSplitRef.current(direction, null, at));
     terminalStore.onSidebarShortcut(() => toggleServersRef.current());
+    terminalStore.onNewTabShortcut(() => requestNewTabRef.current(null));
     return () => {
       terminalStore.onSnippetShortcut(null);
       terminalStore.onSplitShortcut(null);
       terminalStore.onSidebarShortcut(null);
+      terminalStore.onNewTabShortcut(null);
     };
   }, []);
 
@@ -232,19 +242,32 @@ export default function TabsApp() {
     terminalStore.updateServers(servers);
   }
 
+  /**
+   * "New connection" form (+ in the server list, + menu of the tabs, welcome guide): connect only,
+   * save, test. From the tabs the save button also connects.
+   */
+  function openConnectDialog(saveConnects: boolean) {
+    setSidebarNotice("");
+    // A new server starts in the category that is currently filtered.
+    setConnectDialog({ saveConnects, category: serverFilters.category?.trim() ?? "" });
+  }
+
   function openServerDialog(server: SavedHost | null) {
     setSidebarNotice("");
     setServerDialog(server);
   }
 
-  async function saveServer(server: SavedHost) {
+  /** Adds or updates a saved server; false when writing servers.json failed. */
+  async function saveServer(server: SavedHost): Promise<boolean> {
     const exists = savedHosts.some((saved) => saved.id === server.id);
     try {
       await storeServers(exists ? savedHosts.map((saved) => saved.id === server.id ? server : saved) : [...savedHosts, server]);
       setSidebarNotice(exists ? t("notice.serverUpdated") : t("notice.serverSaved"));
       setServerDialog(undefined);
+      return true;
     } catch (error) {
       setStorageError(t("notice.saveServersFailed", { error: translateBackend(error) }));
+      return false;
     }
   }
 
@@ -285,6 +308,22 @@ export default function TabsApp() {
     terminalStore.focusActiveTerminal();
   }
 
+  /** + button / shortcut: local shell, a new connection or a saved server. */
+  function requestNewTab(anchor: DOMRect | null) {
+    setNewTabMenu(anchor ? { x: anchor.left, y: anchor.bottom + 4 } : { x: window.innerWidth / 2 - 130, y: window.innerHeight / 3 });
+  }
+
+  function chooseNewTab(target: SplitTarget) {
+    setNewTabMenu(null);
+    if (target.kind === "server") terminalStore.openServer(target.server);
+    else terminalStore.openLocalShell();
+  }
+
+  function closeNewTabMenu() {
+    setNewTabMenu(null);
+    terminalStore.focusActiveTerminal();
+  }
+
   function insertSnippet(snippet: Snippet, execute: boolean) {
     setPickerOpen(false);
     terminalStore.insertSnippet(snippet.text, execute);
@@ -311,6 +350,7 @@ export default function TabsApp() {
 
   const themeIcon = appSettings.themeMode === "system" ? "◐" : appSettings.themeMode === "light" ? "☀" : "☾";
   const serversLabel = withShortcut(panels.showServers ? t("sidebar.hide") : t("sidebar.show"), terminalStore.shortcutLabel("toggleSidebar"));
+  const newTabLabel = [withShortcut(t("tabs.newTab"), terminalStore.shortcutLabel("newTab")), withShortcut(t("tabs.openLocalTitle"), terminalStore.shortcutLabel("localShell"))].join("\n");
   const snippetsLabel = panels.showSnippets ? t("snippetPanel.hide") : t("snippetPanel.show");
 
   return (
@@ -322,7 +362,7 @@ export default function TabsApp() {
             doubleClick={appSettings.serverOpenClick === "double"}
             filters={serverFilters}
             notice={sidebarNotice}
-            onAdd={() => openServerDialog(null)}
+            onAdd={() => openConnectDialog(false)}
             onEdit={openServerDialog}
             onFilters={setServerFilters}
             onHide={panels.toggleServers}
@@ -342,7 +382,7 @@ export default function TabsApp() {
           <button aria-controls="server-sidebar" aria-label={serversLabel} aria-pressed={panels.showServers} className="tabbar-button" disabled={!usable} onClick={panels.toggleServers} title={serversLabel} type="button"><span aria-hidden="true">☰</span></button>
           <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
             {tabs.map((tab) => (
-              <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab) } as CSSProperties}>
+              <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab), "--terminal-bg": tab.appearance.background } as CSSProperties}>
                 {renamingTabId === tab.id ? (
                   <TabRenameField
                     onDone={(title) => {
@@ -363,7 +403,7 @@ export default function TabsApp() {
               </div>
             ))}
           </div>
-          <button aria-label={t("tabs.openLocal")} className="tabbar-button add-tab-button" onClick={() => terminalStore.openLocalShell()} title={withShortcut(t("tabs.openLocalTitle"), terminalStore.shortcutLabel("localShell"))} type="button"><span aria-hidden="true">+</span></button>
+          <button aria-haspopup="menu" aria-label={t("tabs.newTab")} className="tabbar-button add-tab-button" onClick={(event) => requestNewTab(event.currentTarget.getBoundingClientRect())} title={newTabLabel} type="button"><span aria-hidden="true">+</span></button>
           <div className="tabbar-actions">
             {activeTab && (["row", "column"] as const).map((direction) => {
               // Already split: the buttons switch the layout instead of adding a pane.
@@ -376,10 +416,12 @@ export default function TabsApp() {
                 </button>
               );
             })}
-            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets} className="tabbar-button" disabled={!usable} onClick={panels.toggleSnippets} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
             <button aria-label={t("topbar.themeToggle", { mode: themeModeLabel(appSettings.themeMode) })} className="tabbar-button" disabled={!usable} onClick={cycleThemeMode} title={t("topbar.themeTitle", { mode: themeModeLabel(appSettings.themeMode) })} type="button"><span aria-hidden="true">{themeIcon}</span></button>
             <button aria-label={update ? t("update.available", { version: update.version }) : t("about.open")} className={`tabbar-button${update ? " tabbar-button-badge" : ""}`} onClick={() => setAboutOpen(true)} title={update ? `${t("about.open")} · ${t("update.available", { version: update.version })}` : t("about.open")} type="button"><span aria-hidden="true">ⓘ</span></button>
             <button aria-label={t("topbar.openSettings")} className="tabbar-button" disabled={!usable} onClick={() => setSettingsOpen({})} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
+            {/* The snippet panel opens on the right, so its toggle sits at the far right. */}
+            <span aria-hidden="true" className="tabbar-separator" />
+            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets} className="tabbar-button" disabled={!usable} onClick={panels.toggleSnippets} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
           </div>
         </div>
 
@@ -398,7 +440,7 @@ export default function TabsApp() {
                 hasServers={savedHosts.length > 0}
                 onUpdateChoice={(enabled) => persistSettings({ ...settingsRef.current, checkUpdates: enabled, updatesAsked: true })}
                 updatesAsked={appSettings.updatesAsked}
-                onAddServer={() => openServerDialog(null)}
+                onAddServer={() => openConnectDialog(false)}
                 onHide={() => setWelcome(true)}
                 onLocalShell={() => terminalStore.openLocalShell()}
                 onSettings={() => setSettingsOpen({})}
@@ -447,8 +489,30 @@ export default function TabsApp() {
           initialCategory={serverFilters.category?.trim() ?? ""}
           onClose={() => setServerDialog(undefined)}
           onEditDesigns={(appearanceId) => setSettingsOpen({ appearanceId: appearanceId || appSettings.defaultAppearanceId })}
-          onSave={saveServer}
+          onSave={async (server) => { await saveServer(server); }}
           server={serverDialog}
+          servers={savedHosts}
+          settings={appSettings}
+          storageError={storageError}
+        />
+      )}
+      {connectDialog && (
+        <ServerDialog
+          initialCategory={connectDialog.category}
+          onClose={() => { setConnectDialog(null); terminalStore.focusActiveTerminal(); }}
+          onConnect={(server) => {
+            // Not saved: the tab works as usual but is not restored on the next start.
+            setConnectDialog(null);
+            terminalStore.openServer(server);
+          }}
+          onEditDesigns={(appearanceId) => setSettingsOpen({ appearanceId: appearanceId || appSettings.defaultAppearanceId })}
+          onSave={async (server) => {
+            if (!(await saveServer(server))) return;
+            setConnectDialog(null);
+            if (connectDialog.saveConnects) terminalStore.openServer(server);
+          }}
+          saveConnects={connectDialog.saveConnects}
+          server={null}
           servers={savedHosts}
           settings={appSettings}
           storageError={storageError}
@@ -480,15 +544,28 @@ export default function TabsApp() {
         />
       )}
       {splitMenu && activeTab && (
-        <SplitMenu
-          direction={splitMenu.direction}
+        <TargetMenu
           onChoose={chooseSplit}
           onClose={closeSplitMenu}
-          sameLabel={titleOf(activeTab)}
+          same={{ label: titleOf(activeTab), shortcut: terminalStore.shortcutLabel(splitMenu.direction === "row" ? "splitRight" : "splitDown") }}
           serverAddress={serverAddress}
           servers={savedHosts}
+          title={splitMenu.direction === "row" ? t("split.menuRow") : t("split.menuColumn")}
           x={splitMenu.x}
           y={splitMenu.y}
+        />
+      )}
+      {newTabMenu && (
+        <TargetMenu
+          localShortcut={terminalStore.shortcutLabel("localShell")}
+          onChoose={chooseNewTab}
+          onClose={closeNewTabMenu}
+          onNewConnection={() => { setNewTabMenu(null); openConnectDialog(true); }}
+          serverAddress={serverAddress}
+          servers={savedHosts}
+          title={t("tabs.newTabMenu")}
+          x={newTabMenu.x}
+          y={newTabMenu.y}
         />
       )}
       {terminalSnapshot.contextMenu && <TerminalContextMenu key={`${terminalSnapshot.contextMenu.x},${terminalSnapshot.contextMenu.y}`} menu={terminalSnapshot.contextMenu} />}

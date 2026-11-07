@@ -94,6 +94,7 @@ class TerminalStore {
   private pendingPaste: PendingPaste | null = null;
   private snippetShortcutHandler: (() => void) | null = null;
   private sidebarShortcutHandler: (() => void) | null = null;
+  private newTabShortcutHandler: (() => void) | null = null;
   private splitShortcutHandler: ((direction: SplitDirection, at: { x: number; y: number } | null) => void) | null = null;
   private contextMenu: TerminalContextMenu | null = null;
   private pendingClipboardRead: (PendingClipboardRead & { target: string }) | null = null;
@@ -124,6 +125,11 @@ class TerminalStore {
   /** Ctrl+Shift+B (by default): show or hide the server sidebar. */
   onSidebarShortcut(handler: (() => void) | null): void {
     this.sidebarShortcutHandler = handler;
+  }
+
+  /** Ctrl+Shift+N (by default): choose what a new tab opens. */
+  onNewTabShortcut(handler: (() => void) | null): void {
+    this.newTabShortcutHandler = handler;
   }
 
   /** Optional: lets the UI handle the split shortcuts; without it they split with the same target. */
@@ -1071,6 +1077,9 @@ class TerminalStore {
         return true;
       case "toggleSidebar":
         this.sidebarShortcutHandler?.();
+        return true;
+      case "newTab":
+        this.newTabShortcutHandler?.();
         return true;
       case "localShell":
         this.openLocalShell();

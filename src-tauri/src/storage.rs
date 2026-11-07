@@ -121,7 +121,7 @@ const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
 /// Same list as KEY_ACTIONS in src/keybindings.ts.
-const KEY_ACTIONS: [&str; 14] = [
+const KEY_ACTIONS: [&str; 15] = [
     "copy",
     "paste",
     "snippets",
@@ -136,6 +136,7 @@ const KEY_ACTIONS: [&str; 14] = [
     "zoomOut",
     "zoomReset",
     "toggleSidebar",
+    "newTab",
 ];
 const MAX_BINDINGS_PER_ACTION: usize = 4;
 const MAX_COMBO_LEN: usize = 40;
