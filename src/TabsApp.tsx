@@ -382,7 +382,7 @@ export default function TabsApp() {
           <button aria-controls="server-sidebar" aria-label={serversLabel} aria-pressed={panels.showServers} className="tabbar-button" disabled={!usable} onClick={panels.toggleServers} title={serversLabel} type="button"><span aria-hidden="true">☰</span></button>
           <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
             {tabs.map((tab) => (
-              <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab), "--terminal-bg": tab.appearance.background } as CSSProperties}>
+              <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab), "--terminal-bg": tab.appearance.background, "--terminal-fg": tab.appearance.foreground } as CSSProperties}>
                 {renamingTabId === tab.id ? (
                   <TabRenameField
                     onDone={(title) => {

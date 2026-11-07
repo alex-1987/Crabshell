@@ -19,17 +19,17 @@ type SettingsDialogProps = {
   onClose: () => void;
 };
 
-type Section = "display" | "terminal" | "appearances" | "behavior" | "prompts" | "shortcuts" | "system";
+type Section = "display" | "terminal" | "behavior" | "prompts" | "shortcuts" | "system" |"appearances";
 
 /** Left navigation of the settings dialog, in this order. */
 const sections: { id: Section; label: MessageKey }[] = [
   { id: "display", label: "settings.display" },
-  { id: "terminal", label: "settings.terminal" },
-  { id: "appearances", label: "settings.designs" },
+  { id: "terminal", label: "settings.terminal" }, 
   { id: "behavior", label: "settings.behavior" },
   { id: "prompts", label: "settings.prompts" },
   { id: "shortcuts", label: "settings.shortcuts" },
   { id: "system", label: "settings.system" },
+  { id: "appearances", label: "settings.designs" },
 ];
 
 const colorFields: { key: keyof Pick<Appearance, "foreground" | "background" | "cursor" | "selection" | "tabColor">; label: MessageKey }[] = [
@@ -213,9 +213,16 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                     {usedBy.length === 0 ? t("settings.unused") : t("settings.usedBy", { names: usedBy.join(", ") })}
                     {" "}{t("settings.assignHint")}
                   </div>
-                  {selected.id !== DEFAULT_APPEARANCE_ID && (
-                    <button className="text-action text-danger" onClick={removeAppearance} type="button">{t("settings.deleteDesign")}</button>
-                  )}
+                  <div className="appearance-actions">
+                    {selected.id === draft.defaultAppearanceId ? (
+                      <span className="appearance-default-note">✓ {t("settings.isDefaultDesign")}</span>
+                    ) : (
+                      <button className="button button-secondary" onClick={() => setDraft({ ...draft, defaultAppearanceId: selected.id })} type="button">{t("settings.makeDefaultDesign")}</button>
+                    )}
+                    {selected.id !== DEFAULT_APPEARANCE_ID && (
+                      <button className="text-action text-danger" onClick={removeAppearance} type="button">{t("settings.deleteDesign")}</button>
+                    )}
+                  </div>
                 </div>
               </div>
               </>
