@@ -32,7 +32,6 @@ Tabs, saved servers, snippets and a clipboard that also works over SSH, built on
 > **Crabshell is vibe-coded.** It was built largely through conversations with an AI coding assistant ([Claude Code](https://claude.com/claude-code)): I describe the features, test them, and decide what goes in. The code is checked with type checks, `clippy` and unit tests, but it has not had an independent security review. It is a hobby project, provided as is. Please read the code before trusting it with anything critical, and [open an issue](https://github.com/alex-1987/Crabshell/issues) if you find a problem.
 
 ![Crabshell](docs/slideshow.gif)
-<img width="1920" height="641" alt="slideshow" src="https://github.com/user-attachments/assets/9cacda5b-30bc-40f2-9a94-784d02828dc4" />
 
 ## Installation
 
