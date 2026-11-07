@@ -142,6 +142,7 @@ export default function ServerDialog({ server, initialCategory, servers, setting
         </div>
         <label className="field-label" htmlFor="username">{t("server.username")}</label>
         <input autoComplete="off" id="username" name="username" onChange={(event) => setUsername(event.target.value)} placeholder={t("server.usernamePlaceholder")} spellCheck={false} value={username} />
+        <div className="form-footnote">{t("server.usernameHint")}</div>
         <label className="field-label" htmlFor="identity-file">{t("server.privateKey")}</label>
         <div className="key-picker" title={t("server.footnote")}>
           <span className="key-picker-name" title={identityFile || undefined}>{identityFile ? fileName(identityFile) : t("server.noKey")}</span>

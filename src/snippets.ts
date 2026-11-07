@@ -38,6 +38,20 @@ export function parseTags(value: string): string[] {
   return tags;
 }
 
+/** All tags with their use count: compared case-insensitively, the first spelling wins. */
+export function snippetTags(snippets: Snippet[]) {
+  const tags = new Map<string, { key: string; label: string; count: number }>();
+  for (const snippet of snippets) {
+    for (const tag of new Set(snippet.tags.map((item) => item.toLowerCase()))) {
+      const label = snippet.tags.find((item) => item.toLowerCase() === tag) ?? tag;
+      const entry = tags.get(tag) ?? { key: tag, label, count: 0 };
+      entry.count += 1;
+      tags.set(tag, entry);
+    }
+  }
+  return [...tags.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
 /** Every search word must match the name, a tag or the text (case-insensitive). Names rank first. */
 export function filterSnippets(snippets: Snippet[], query: string): Snippet[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);

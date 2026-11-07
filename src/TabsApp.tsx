@@ -14,7 +14,7 @@ import SettingsDialog from "./SettingsDialog";
 import SnippetEditor from "./SnippetEditor";
 import SnippetPanel from "./SnippetPanel";
 import SnippetPicker from "./SnippetPicker";
-import type { Snippet } from "./snippets";
+import { snippetTags, type Snippet } from "./snippets";
 import TargetMenu from "./TargetMenu";
 import TabMenu from "./TabMenu";
 import TabRenameField from "./TabRenameField";
@@ -583,7 +583,7 @@ export default function TabsApp() {
           snippets={snippets.snippets}
         />
       )}
-      {snippets.editing && <SnippetEditor onClose={snippets.closeEditor} onSave={snippets.store} snippet={snippets.editing} />}
+      {snippets.editing && <SnippetEditor existingTags={snippetTags(snippets.snippets)} onClose={snippets.closeEditor} onSave={snippets.store} snippet={snippets.editing} />}
       {/* Rendered last so it stacks above the server dialog when opened from there. */}
       {settingsOpen && (
         <SettingsDialog initialAppearanceId={settingsOpen.appearanceId} onClose={() => setSettingsOpen(null)} onSave={saveSettingsDialog} servers={savedHosts} settings={appSettings} systemLocale={systemLocale} />

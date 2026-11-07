@@ -2,7 +2,7 @@ import FilterChips from "./FilterChips";
 import { t } from "./i18n";
 import { withShortcut } from "./labels";
 import SnippetSidebar from "./SnippetSidebar";
-import type { Snippet } from "./snippets";
+import { snippetTags, type Snippet } from "./snippets";
 import { terminalStore } from "./terminalStore";
 
 type SnippetPanelProps = {
@@ -24,25 +24,11 @@ type SnippetPanelProps = {
   onInsert: (snippet: Snippet, execute: boolean) => void;
 };
 
-/** Tag chips: tags compare case-insensitively, the first spelling wins. */
-function tagChipsOf(snippets: Snippet[]) {
-  const tags = new Map<string, { key: string; label: string; count: number }>();
-  for (const snippet of snippets) {
-    for (const tag of new Set(snippet.tags.map((item) => item.toLowerCase()))) {
-      const label = snippet.tags.find((item) => item.toLowerCase() === tag) ?? tag;
-      const entry = tags.get(tag) ?? { key: tag, label, count: 0 };
-      entry.count += 1;
-      tags.set(tag, entry);
-    }
-  }
-  return [...tags.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
-}
-
 /** Right-hand snippet panel. */
 export default function SnippetPanel(props: SnippetPanelProps) {
   const { snippets, ready, error, notice, tagFilter, onTagFilter } = props;
   const pickerLabel = withShortcut(t("snippets.openPicker"), terminalStore.shortcutLabel("snippets"));
-  const chips = tagChipsOf(snippets);
+  const chips = snippetTags(snippets);
   // A tag whose last snippet was deleted no longer filters.
   const activeTag = tagFilter !== null && chips.some((chip) => chip.key === tagFilter) ? tagFilter : null;
   const visible = activeTag === null ? snippets : snippets.filter((snippet) => snippet.tags.some((tag) => tag.toLowerCase() === activeTag));

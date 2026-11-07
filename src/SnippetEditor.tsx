@@ -3,19 +3,33 @@ import Dialog from "./Dialog";
 import { t, translateBackend } from "./i18n";
 import { MAX_SNIPPET_BYTES, parseTags, type Snippet } from "./snippets";
 
+/** An existing tag offered below the tags field. */
+type TagChoice = { key: string; label: string };
+
 type SnippetEditorProps = {
   /** `id` is empty for a new snippet. */
   snippet: Snippet;
+  /** Tags of all saved snippets, offered as chips to add or remove with a click. */
+  existingTags: TagChoice[];
   onSave: (snippet: Snippet) => Promise<void>;
   onClose: () => void;
 };
 
-export default function SnippetEditor({ snippet, onSave, onClose }: SnippetEditorProps) {
+export default function SnippetEditor({ snippet, existingTags, onSave, onClose }: SnippetEditorProps) {
   const [name, setName] = useState(snippet.name);
   const [tags, setTags] = useState(snippet.tags.join(", "));
   const [text, setText] = useState(snippet.text);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const chosen = new Set(parseTags(tags).map((tag) => tag.toLowerCase()));
+
+  /** Adds an existing tag to the field, or removes it when it is already there. */
+  function toggleTag(choice: TagChoice) {
+    const current = parseTags(tags);
+    const next = chosen.has(choice.key) ? current.filter((tag) => tag.toLowerCase() !== choice.key) : [...current, choice.label];
+    setTags(next.join(", "));
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,6 +52,13 @@ export default function SnippetEditor({ snippet, onSave, onClose }: SnippetEdito
         <input autoComplete="off" autoFocus id="snippet-name" maxLength={128} onChange={(event) => setName(event.target.value)} placeholder={t("snippetEditor.namePlaceholder")} value={name} />
         <label className="field-label" htmlFor="snippet-tags">{t("snippetEditor.tags")}</label>
         <input autoComplete="off" id="snippet-tags" onChange={(event) => setTags(event.target.value)} placeholder={t("snippetEditor.tagsPlaceholder")} spellCheck={false} value={tags} />
+        {existingTags.length > 0 && (
+          <div aria-label={t("snippetEditor.existingTags")} className="snippet-tags snippet-editor-tags" role="group">
+            {existingTags.map((choice) => (
+              <button aria-pressed={chosen.has(choice.key)} className="snippet-tag-button" key={choice.key} onClick={() => toggleTag(choice)} title={t(chosen.has(choice.key) ? "snippetEditor.removeTag" : "snippetEditor.addTag", { tag: choice.label })} type="button">{choice.label}</button>
+            ))}
+          </div>
+        )}
         <label className="field-label" htmlFor="snippet-text">{t("snippetEditor.text")}</label>
         <textarea
           autoComplete="off"
