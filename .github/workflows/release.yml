@@ -5,7 +5,7 @@ name: release
 # in package.json/tauri.conf.json/Cargo.toml müssen dafür nicht vorher angepasst werden.
 # Bei "Run workflow" ohne Tag wird die Version aus src-tauri/tauri.conf.json genommen.
 #
-# Ablauf: test → build (Linux/Windows) → arch → publish. Die Pakete landen zuerst in einem
+# Ablauf: test → draft → build (Linux/Windows) → arch → publish. Die Pakete landen zuerst in einem
 # Release-Entwurf; "publish" veröffentlicht ihn nur, wenn Tests und alle Builds erfolgreich waren.
 # Schlägt etwas fehl, bleibt es ein Entwurf zum Prüfen.
 on:
@@ -54,8 +54,47 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo test
 
-  build:
+  # Legt den Release-Entwurf genau einmal an. Früher hat jeder Build-Job selbst nach dem Release
+  # gesucht; Entwürfe findet die Suche nach Tag aber nicht, also hat jeder parallele Build einen
+  # eigenen Entwurf angelegt und publish nur einen davon veröffentlicht (v0.2.9 ohne x86_64/Windows).
+  draft:
     needs: test
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create release draft
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag="${{ github.ref_name }}"
+            version=$(node scripts/set-version.mjs "${tag}")
+          else
+            version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+            tag="v${version}"
+          fi
+          # Gibt es schon ein Release (auch einen Entwurf) zu diesem Tag, z. B. bei "Re-run"?
+          id=$(gh api "repos/${REPO}/releases?per_page=100" --jq ".[] | select(.tag_name == \"${tag}\") | .id" | head -n 1)
+          if [ -z "${id}" ]; then
+            prerelease=false
+            case "${version}" in *-*) prerelease=true ;; esac   # z. B. v0.3.0-beta.1
+            id=$(gh api "repos/${REPO}/releases" \
+              -f tag_name="${tag}" -f target_commitish="${GITHUB_SHA}" -f name="Crabshell v${version}" \
+              -F body=@.github/release-body.md -F draft=true -F prerelease="${prerelease}" --jq .id)
+          fi
+          echo "Release ${tag}: ${id}"
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [test, draft]
     permissions:
       contents: write   # nötig, damit der Workflow das Release anlegen und Dateien hochladen darf
     strategy:
@@ -109,34 +148,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Genau der gepushte Tag (kein neuer Tag); bei "Run workflow" v<Version aus tauri.conf.json>.
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.version) }}
-          releaseName: 'Crabshell v${{ steps.version.outputs.version }}'
-          releaseBody: |
-            Packages for Linux (x86_64 and arm64) and Windows 10/11 (x64). Requires the OpenSSH client (`ssh`), which Windows 10/11 already includes.
-
-            | System | File |
-            | --- | --- |
-            | Windows 10/11 | `_x64-setup.exe` (recommended) or `.msi` |
-            | Debian, Ubuntu, Linux Mint, Pop!_OS | `.deb` (`amd64` / `arm64`) |
-            | Fedora, openSUSE, RHEL | `.rpm` (`x86_64` / `aarch64`) |
-            | Arch Linux, CachyOS, EndeavourOS, Manjaro | `.pkg.tar.zst` (x86_64) |
-            | Any other distribution | `.AppImage` |
-
-            Windows: the installer is not code-signed yet. If SmartScreen shows "Windows protected your PC", choose *More info* → *Run anyway*.
-
-            📦 Step-by-step instructions: https://github.com/alex-1987/Crabshell#installation
-            ♥ Like Crabshell? Support it via [GitHub Sponsors](https://github.com/sponsors/alex-1987).
           # MSI erlaubt nur rein numerische Versionen: bei Vorabversionen (v0.3.0-beta.1) unter Windows nur die Setup-.exe.
           args: ${{ runner.os == 'Windows' && contains(steps.version.outputs.version, '-') && '--bundles nsis' || '' }}
-          releaseDraft: true                # Entwurf; der publish-Job veröffentlicht ihn, wenn alles grün ist
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}   # z. B. v0.3.0-beta.1
+          # Lädt in den Entwurf, den der draft-Job angelegt hat (kein eigenes Release pro Build).
+          releaseId: ${{ needs.draft.outputs.id }}
 
   # pacman-Paket für Arch-basierte Distributionen (Arch, CachyOS, EndeavourOS, Manjaro, ...).
   # Gebaut wird in einem Arch-Container mit packaging/arch/PKGBUILD und anschließend an das
-  # Release-Draft angehängt, das der build-Job angelegt hat.
+  # Release-Entwurf angehängt, den der draft-Job angelegt hat.
   arch:
-    needs: [test, build]
+    needs: [test, draft, build]
     # Auch wenn z. B. nur der arm64-Build fehlschlägt, aber nie nach fehlgeschlagenen Tests.
     if: ${{ !cancelled() && needs.test.result == 'success' }}
     permissions:
@@ -165,19 +186,24 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ needs.draft.outputs.id }}
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            tag="${{ github.ref_name }}"
-          else
-            tag="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          fi
-          gh release upload "${tag}" packaging/arch/*.pkg.tar.zst --clobber --repo "${{ github.repository }}"
+          # Über die ID des Entwurfs, nicht über den Tag (Entwürfe sind per Tag nicht eindeutig).
+          for file in packaging/arch/*.pkg.tar.zst; do
+            name=$(basename "${file}")
+            # Wie --clobber: eine gleichnamige Datei (z. B. von einem früheren Lauf) zuerst löschen.
+            old=$(gh api "repos/${REPO}/releases/${RELEASE_ID}/assets?per_page=100" --jq ".[] | select(.name == \"${name}\") | .id")
+            [ -n "${old}" ] && gh api -X DELETE "repos/${REPO}/releases/assets/${old}"
+            gh api -X POST "https://uploads.github.com/repos/${REPO}/releases/${RELEASE_ID}/assets?name=${name}" \
+              -H "Content-Type: application/octet-stream" --input "${file}" --jq .browser_download_url
+          done
 
   # Veröffentlicht den Entwurf, sobald Tests, alle Builds und das Arch-Paket erfolgreich waren.
   # Nur bei Tags; bei einem manuellen Lauf ohne Tag bleibt es ein Entwurf.
   publish:
-    needs: [test, build, arch]
-    if: ${{ github.ref_type == 'tag' && needs.test.result == 'success' && needs.build.result == 'success' && needs.arch.result == 'success' }}
+    needs: [test, draft, build, arch]
+    if: ${{ github.ref_type == 'tag' && needs.test.result == 'success' && needs.draft.result == 'success' && needs.build.result == 'success' && needs.arch.result == 'success' }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -185,4 +211,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
+        run: gh api -X PATCH "repos/${{ github.repository }}/releases/${{ needs.draft.outputs.id }}" -F draft=false --jq .html_url
