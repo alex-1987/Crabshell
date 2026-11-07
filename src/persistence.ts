@@ -56,9 +56,9 @@ export function loadLegacySettings(): AppSettings {
     const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
     return {
       ...defaultSettings,
-      sidebarWidth: Number.isFinite(storedWidth) && storedWidth >= 210 && storedWidth <= 420
+      sidebarWidth: Number.isFinite(storedWidth) && storedWidth >= 180 && storedWidth <= 420
         ? Math.round(storedWidth)
-        : 280,
+        : 220,
       sidebarCollapsed: localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
     };
   } catch {

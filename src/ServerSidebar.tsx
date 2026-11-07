@@ -1,8 +1,9 @@
 import { useState } from "react";
 import BrandMark from "./BrandMark";
 import { t } from "./i18n";
-import { fileName, serverAddress } from "./labels";
+import { fileName, serverAddress, withShortcut } from "./labels";
 import ServerList from "./ServerList";
+import { terminalStore } from "./terminalStore";
 import type { SavedHost } from "./terminalTypes";
 
 /** Sidebar filter state that survives hiding the sidebar. */
@@ -34,23 +35,22 @@ type ServerSidebarProps = {
 export default function ServerSidebar({ version, servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onEdit, onOpen, onRemove }: ServerSidebarProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const usable = storageReady && !storageError;
+  const hideLabel = withShortcut(t("sidebar.hide"), terminalStore.shortcutLabel("toggleSidebar"));
   const setQuery = (query: string) => onFilters({ ...filters, query });
 
   return (
     <aside className="sidebar" id="server-sidebar">
-      <div className="sidebar-brand-row">
-        <div className="brand-row">
-          <BrandMark />
-          <div>
-            <div className="brand-name">crabshell{version && <span className="brand-version">v{version}</span>}</div>
-            <div className="brand-caption">LOCAL SSH WORKSPACE</div>
-          </div>
-        </div>
-        <button aria-label={t("sidebar.hide")} className="icon-button sidebar-toggle" disabled={!storageReady} onClick={onHide} title={t("sidebar.hide")} type="button"><span aria-hidden="true">‹</span></button>
+      <div className="sidebar-brand-row" title={`Crabshell ${version}`}>
+        <BrandMark size={16} />
+        <span className="brand-name">crabshell</span>
+        {version && <span className="brand-version">{version}</span>}
       </div>
       <div className="server-list-heading">
         <div><h1>{t("sidebar.servers")}</h1><span>{servers.length}</span></div>
-        <button aria-label={t("sidebar.addServer")} className="icon-button add-server-button" disabled={!usable} onClick={onAdd} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
+        <div className="sidebar-heading-actions">
+          <button aria-label={t("sidebar.addServer")} className="icon-button" disabled={!usable} onClick={onAdd} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
+          <button aria-label={hideLabel} className="icon-button" disabled={!storageReady} onClick={onHide} title={hideLabel} type="button"><span aria-hidden="true">‹</span></button>
+        </div>
       </div>
       {notice && <div aria-live="polite" className="page-notice">{notice}</div>}
       {usable && servers.length > 0 && (
@@ -100,10 +100,6 @@ export default function ServerSidebar({ version, servers, storageReady, storageE
           />
         )}
       </nav>
-      <div className="sidebar-bottom">
-        <div className="open-ssh-badge"><span>SSH</span><div><strong>OpenSSH</strong><small>{t("sidebar.systemInstall")}</small></div></div>
-        <div className="sidebar-meta">{t("sidebar.meta")}</div>
-      </div>
     </aside>
   );
 }

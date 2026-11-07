@@ -14,7 +14,8 @@ export type KeyAction =
   | "otherPane"
   | "zoomIn"
   | "zoomOut"
-  | "zoomReset";
+  | "zoomReset"
+  | "toggleSidebar";
 
 /** Stored per action; actions that are missing use the defaults. An empty list disables the action. */
 export type Keybindings = Partial<Record<KeyAction, string[]>>;
@@ -33,6 +34,7 @@ export const KEY_ACTIONS: { action: KeyAction; label: MessageKey }[] = [
   { action: "zoomIn", label: "keys.zoomIn" },
   { action: "zoomOut", label: "keys.zoomOut" },
   { action: "zoomReset", label: "keys.zoomReset" },
+  { action: "toggleSidebar", label: "keys.toggleSidebar" },
 ];
 
 export const DEFAULT_KEYBINDINGS: Record<KeyAction, string[]> = {
@@ -50,6 +52,8 @@ export const DEFAULT_KEYBINDINGS: Record<KeyAction, string[]> = {
   zoomIn: ["Ctrl+Plus", "Ctrl+Shift+Plus", "Ctrl+="],
   zoomOut: ["Ctrl+-"],
   zoomReset: ["Ctrl+0"],
+  // Not Ctrl+B: that is the tmux prefix and "back one character" in shells.
+  toggleSidebar: ["Ctrl+Shift+B"],
 };
 
 /** Same limits as the backend (storage.rs). */

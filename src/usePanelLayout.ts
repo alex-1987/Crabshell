@@ -11,7 +11,7 @@ type PanelSettings = Pick<AppSettings, "sidebarWidth" | "sidebarCollapsed" | "sn
 const MIN_TERMINAL_WIDTH = 480;
 /** Below this window width the panels overlay the terminal (see styles.css); only one fits. */
 const OVERLAY_BREAKPOINT = 760;
-const MIN_PANEL_WIDTH = 210;
+const MIN_PANEL_WIDTH = 180;
 const MAX_PANEL_WIDTH = 420;
 
 const clampPanelWidth = (width: number) => Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, width)));
@@ -28,10 +28,10 @@ export function usePanelLayout({ enabled, zoom, onPersist }: {
   /** Saves changed panel settings. */
   onPersist: (patch: Partial<PanelSettings>) => void;
 }) {
-  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [sidebarWidth, setSidebarWidth] = useState(220);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [snippetPanelOpen, setSnippetPanelOpen] = useState(false);
-  const [snippetPanelWidth, setSnippetPanelWidth] = useState(280);
+  const [snippetPanelWidth, setSnippetPanelWidth] = useState(220);
   /** Which panel wins when both are open but the window is too narrow for both. */
   const [lastOpened, setLastOpened] = useState<Panel>("servers");
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);

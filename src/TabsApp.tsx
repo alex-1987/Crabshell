@@ -150,12 +150,16 @@ export default function TabsApp() {
   // Shortcuts from inside a terminal that need UI from here.
   const requestSplitRef = useRef(requestSplit);
   requestSplitRef.current = requestSplit;
+  const toggleServersRef = useRef(panels.toggleServers);
+  toggleServersRef.current = panels.toggleServers;
   useEffect(() => {
     terminalStore.onSnippetShortcut(() => setPickerOpen(true));
     terminalStore.onSplitShortcut((direction, at) => requestSplitRef.current(direction, null, at));
+    terminalStore.onSidebarShortcut(() => toggleServersRef.current());
     return () => {
       terminalStore.onSnippetShortcut(null);
       terminalStore.onSplitShortcut(null);
+      terminalStore.onSidebarShortcut(null);
     };
   }, []);
 
@@ -306,7 +310,7 @@ export default function TabsApp() {
   }
 
   const themeIcon = appSettings.themeMode === "system" ? "◐" : appSettings.themeMode === "light" ? "☀" : "☾";
-  const serversLabel = panels.showServers ? t("sidebar.hide") : t("sidebar.show");
+  const serversLabel = withShortcut(panels.showServers ? t("sidebar.hide") : t("sidebar.show"), terminalStore.shortcutLabel("toggleSidebar"));
   const snippetsLabel = panels.showSnippets ? t("snippetPanel.hide") : t("snippetPanel.show");
 
   return (

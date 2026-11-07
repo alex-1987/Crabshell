@@ -17,10 +17,10 @@ export const builtinAppearance: Appearance = {
 };
 
 export const defaultSettings: AppSettings = {
-  sidebarWidth: 280,
+  sidebarWidth: 220,
   sidebarCollapsed: false,
   snippetPanelOpen: false,
-  snippetPanelWidth: 280,
+  snippetPanelWidth: 220,
   serverOpenClick: "single",
   snippetInsertClick: "single",
   restoreTabs: false,

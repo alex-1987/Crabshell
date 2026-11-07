@@ -121,7 +121,7 @@ const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
 /// Same list as KEY_ACTIONS in src/keybindings.ts.
-const KEY_ACTIONS: [&str; 13] = [
+const KEY_ACTIONS: [&str; 14] = [
     "copy",
     "paste",
     "snippets",
@@ -135,6 +135,7 @@ const KEY_ACTIONS: [&str; 13] = [
     "zoomIn",
     "zoomOut",
     "zoomReset",
+    "toggleSidebar",
 ];
 const MAX_BINDINGS_PER_ACTION: usize = 4;
 const MAX_COMBO_LEN: usize = 40;
@@ -160,6 +161,8 @@ fn normalize_keybindings(bindings: &mut BTreeMap<String, Vec<String>>) {
     }
 }
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
+/// Width of the server sidebar and the snippet panel in px (same limits as usePanelLayout.ts).
+const PANEL_WIDTH_RANGE: std::ops::RangeInclusive<u16> = 180..=420;
 
 /// Empty (default) or a font family name that is safe to put into CSS.
 fn valid_font(name: &str) -> bool {
@@ -169,10 +172,10 @@ fn valid_font(name: &str) -> bool {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            sidebar_width: 280,
+            sidebar_width: 220,
             sidebar_collapsed: false,
             snippet_panel_open: false,
-            snippet_panel_width: 280,
+            snippet_panel_width: 220,
             server_open_click: "single".to_string(),
             snippet_insert_click: "single".to_string(),
             restore_tabs: false,
@@ -280,10 +283,10 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
 
     let servers = read_json::<Vec<ServerProfile>>(&servers_path)?.unwrap_or_default();
     let mut settings = read_json::<AppSettings>(&settings_path)?.unwrap_or_default();
-    if !(210..=420).contains(&settings.sidebar_width) {
+    if !PANEL_WIDTH_RANGE.contains(&settings.sidebar_width) {
         settings.sidebar_width = AppSettings::default().sidebar_width;
     }
-    if !(210..=420).contains(&settings.snippet_panel_width) {
+    if !PANEL_WIDTH_RANGE.contains(&settings.snippet_panel_width) {
         settings.snippet_panel_width = AppSettings::default().snippet_panel_width;
     }
     normalize_appearances(&mut settings);
@@ -333,10 +336,10 @@ pub(crate) fn save_servers(app: &AppHandle, servers: &[ServerProfile]) -> Result
 }
 
 pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
-    if !(210..=420).contains(&settings.sidebar_width) {
+    if !PANEL_WIDTH_RANGE.contains(&settings.sidebar_width) {
         return Err("The sidebar width is outside the supported range".to_string());
     }
-    if !(210..=420).contains(&settings.snippet_panel_width) {
+    if !PANEL_WIDTH_RANGE.contains(&settings.snippet_panel_width) {
         return Err("The snippet panel width is outside the supported range".to_string());
     }
     if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
@@ -523,10 +526,10 @@ mod tests {
     #[test]
     fn settings_default_to_a_visible_sidebar() {
         let settings = AppSettings::default();
-        assert_eq!(settings.sidebar_width, 280);
+        assert_eq!(settings.sidebar_width, 220);
         assert!(!settings.sidebar_collapsed);
         assert!(!settings.snippet_panel_open);
-        assert_eq!(settings.snippet_panel_width, 280);
+        assert_eq!(settings.snippet_panel_width, 220);
         assert!(settings.copy_on_select);
         assert!(settings.confirm_multiline_paste);
         assert!(!settings.force_mouse_selection);

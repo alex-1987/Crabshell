@@ -32,8 +32,6 @@ const en = {
   "sidebar.delete": "Delete",
   "sidebar.deleteServer": "Delete {name}",
   "sidebar.remove": "Remove",
-  "sidebar.systemInstall": "System installation",
-  "sidebar.meta": "No cloud · No account · No telemetry",
 
   // Notices
   "notice.enterHost": "Please enter a host name or SSH alias first.",
@@ -221,6 +219,7 @@ const en = {
   "keys.zoomIn": "Larger text in this tab",
   "keys.zoomOut": "Smaller text in this tab",
   "keys.zoomReset": "Reset the text size of this tab",
+  "keys.toggleSidebar": "Show or hide the server list",
   "keys.dividerKeys": "Move the divider (when it has the focus)",
   "keys.dividerDouble": "Reset the divider to 50/50",
   "keys.rightClick": "Context menu: copy, paste, snippets, split",
@@ -469,8 +468,6 @@ const de: Record<MessageKey, string> = {
   "sidebar.delete": "Löschen",
   "sidebar.deleteServer": "{name} löschen",
   "sidebar.remove": "Entfernen",
-  "sidebar.systemInstall": "Systeminstallation",
-  "sidebar.meta": "Keine Cloud · Kein Konto · Keine Telemetrie",
 
   "notice.enterHost": "Bitte zuerst einen Hostnamen oder SSH-Alias eingeben.",
   "notice.invalidPort": "Bitte einen Port zwischen 1 und 65535 eingeben.",
@@ -651,6 +648,7 @@ const de: Record<MessageKey, string> = {
   "keys.zoomIn": "Text in diesem Tab vergrößern",
   "keys.zoomOut": "Text in diesem Tab verkleinern",
   "keys.zoomReset": "Textgröße dieses Tabs zurücksetzen",
+  "keys.toggleSidebar": "Serverliste ein- oder ausblenden",
   "keys.dividerKeys": "Trennlinie verschieben (wenn sie den Fokus hat)",
   "keys.dividerDouble": "Trennlinie auf 50/50 zurücksetzen",
   "keys.rightClick": "Kontextmenü: kopieren, einfügen, Snippets, teilen",

@@ -1,7 +1,9 @@
 import FilterChips from "./FilterChips";
 import { t } from "./i18n";
+import { withShortcut } from "./labels";
 import SnippetSidebar from "./SnippetSidebar";
 import type { Snippet } from "./snippets";
+import { terminalStore } from "./terminalStore";
 
 type SnippetPanelProps = {
   snippets: Snippet[];
@@ -39,6 +41,7 @@ function tagChipsOf(snippets: Snippet[]) {
 /** Right-hand snippet panel. */
 export default function SnippetPanel(props: SnippetPanelProps) {
   const { snippets, ready, error, notice, tagFilter, onTagFilter } = props;
+  const pickerLabel = withShortcut(t("snippets.openPicker"), terminalStore.shortcutLabel("snippets"));
   const chips = tagChipsOf(snippets);
   // A tag whose last snippet was deleted no longer filters.
   const activeTag = tagFilter !== null && chips.some((chip) => chip.key === tagFilter) ? tagFilter : null;
@@ -46,14 +49,12 @@ export default function SnippetPanel(props: SnippetPanelProps) {
 
   return (
     <aside aria-label={t("sidebar.snippets")} className="sidebar snippet-panel" id="snippet-panel">
-      <div className="snippet-panel-top">
-        <button aria-label={t("snippetPanel.hide")} className="icon-button sidebar-toggle" onClick={props.onHide} title={t("snippetPanel.hide")} type="button"><span aria-hidden="true">›</span></button>
-      </div>
       <div className="server-list-heading">
         <div><h1>{t("sidebar.snippets")}</h1><span>{snippets.length}</span></div>
-        <div className="snippet-panel-actions">
-          <button aria-label={t("snippets.openPicker")} className="icon-button add-server-button" onClick={props.onOpenPicker} title={t("snippets.openPicker")} type="button"><span aria-hidden="true">⌕</span></button>
-          <button aria-label={t("snippets.add")} className="icon-button add-server-button" disabled={!ready || Boolean(error)} onClick={props.onAdd} title={t("snippets.add")} type="button"><span aria-hidden="true">+</span></button>
+        <div className="sidebar-heading-actions">
+          <button aria-label={pickerLabel} className="icon-button" onClick={props.onOpenPicker} title={pickerLabel} type="button"><span aria-hidden="true">⌕</span></button>
+          <button aria-label={t("snippets.add")} className="icon-button" disabled={!ready || Boolean(error)} onClick={props.onAdd} title={t("snippets.add")} type="button"><span aria-hidden="true">+</span></button>
+          <button aria-label={t("snippetPanel.hide")} className="icon-button" onClick={props.onHide} title={t("snippetPanel.hide")} type="button"><span aria-hidden="true">›</span></button>
         </div>
       </div>
       {notice && <div aria-live="polite" className="page-notice">{notice}</div>}

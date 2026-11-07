@@ -63,18 +63,15 @@ button { color: inherit; }
   border-right: 1px solid var(--line);
 }
 .sidebar-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
-.sidebar-toggle { width: 28px; height: 28px; font-size: 22px; }
 .sidebar-resizer { z-index: 3; cursor: col-resize; touch-action: none; background: transparent; }
 .sidebar-resizer::after { display: block; width: 1px; height: 100%; margin: auto; background: transparent; content: ""; }
 .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after { width: 2px; background: var(--c-84945e); }
 .sidebar-resizer:focus-visible { outline: none; }
 .sidebar-backdrop { display: none; }
 
-.brand-row { display: flex; align-items: center; gap: 12px; padding: 0 2px; }
 .brand-mark { display: block; flex: 0 0 auto; border-radius: 22%; filter: drop-shadow(0 2px 6px var(--c-00000066)); user-select: none; }
 .about-logo { border-radius: 22%; }
 .brand-name { font-size: 17px; font-weight: 700; line-height: 1.1; letter-spacing: 0; }
-.brand-caption { margin-top: 5px; color: var(--c-8a9482); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0; }
 
 .brand-version { margin-left: 7px; color: var(--c-8a9482); font-family: var(--font-mono); font-size: 10px; font-weight: 500; }
 .status-led { width: 7px; height: 7px; border-radius: 50%; background: var(--c-747d6d); flex: 0 0 auto; }
@@ -83,7 +80,6 @@ button { color: inherit; }
 .server-list-heading > div { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .server-list-heading h1 { margin: 0; color: var(--c-e8ecdf); font-size: 14px; font-weight: 650; }
 .server-list-heading > div > span { color: var(--c-85907b); font-family: var(--font-mono); font-size: 9px; }
-.server-list-heading .add-server-button { width: 30px; height: 30px; font-size: 20px; }
 .saved-server-list { display: flex; flex: 1; flex-direction: column; min-height: 0; gap: 1px; overflow-x: hidden; overflow-y: auto; }
 .sidebar-empty { padding: 15px 3px; color: var(--c-7e8877); font-size: 10px; line-height: 1.5; }
 .saved-server { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px; padding: 6px 5px 7px 8px; border-left: 2px solid transparent; border-bottom: 1px solid var(--c-2e342c); }
@@ -96,7 +92,6 @@ button { color: inherit; }
 .saved-server-actions .icon-button { width: 25px; height: 27px; font-size: 14px; }
 .saved-server-actions .row-icon-button:last-child { color: var(--c-c28b7b); }
 .sidebar-delete-confirm { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 11px; padding: 3px 2px 0; }
-.sidebar-bottom { margin-top: 12px; }
 
 .field-label { display: block; margin: 15px 0 7px; color: var(--c-b6beb0); font-size: 11px; }
 .field-label span { margin-left: 4px; color: var(--c-7d8778); font-size: 10px; }
@@ -157,26 +152,6 @@ input:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e77
 .key-picker-button { width: auto; flex: 0 0 auto; height: 39px; margin: 0; padding: 0 11px; }
 .key-picker-clear { width: 39px; height: 39px; flex: 0 0 auto; margin: 0; padding: 0; font-size: 18px; }
 
-.sidebar-bottom { margin-top: auto; }
-.open-ssh-badge { display: flex; align-items: center; gap: 10px; padding: 12px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.open-ssh-badge > span {
-  display: grid;
-  width: 33px;
-  height: 25px;
-  place-items: center;
-  border: 1px solid var(--c-44523b);
-  border-radius: 4px;
-  color: var(--acid);
-  background: var(--c-272e23);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-}
-.open-ssh-badge strong, .open-ssh-badge small { display: block; }
-.open-ssh-badge strong { font-size: 11px; font-weight: 600; }
-.open-ssh-badge small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-.sidebar-meta { margin-top: 12px; color: var(--c-737d6e); font-size: 9px; text-align: center; }
-
 .status-connected { background: var(--acid); box-shadow: 0 0 9px var(--c-c7e77a55); }
 .status-connecting, .status-disconnecting { background: var(--c-e7bd72); box-shadow: 0 0 7px var(--c-e7bd7244); }
 .status-failed { background: var(--coral); box-shadow: 0 0 7px var(--c-e98a7044); }
@@ -196,8 +171,6 @@ input:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e77
 }
 .icon-button:hover { border-color: var(--c-424a3e); background: var(--c-272d25); }
 .icon-button:focus-visible, .text-action:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
-.add-server-button { width: 36px; height: 36px; border-color: var(--c-71834e); color: var(--c-192016); background: var(--acid); font-size: 23px; }
-.add-server-button:hover { border-color: var(--c-d3ef8f); background: var(--c-d3ef8f); }
 
 .page-eyebrow { color: var(--c-9aab79); font-family: var(--font-mono); font-size: 9px; }
 .page-notice { margin: 0 0 14px; color: var(--c-b8c99a); font-size: 11px; }
@@ -244,8 +217,6 @@ input:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e77
   .sidebar-resizer { display: none; }
   .snippet-panel { inset: 0 0 0 auto; width: min(var(--snippet-panel-width), calc(100vw - 52px)); box-shadow: -15px 0 40px var(--c-00000066); }
   .sidebar-backdrop { position: fixed; z-index: 20; inset: 0; display: block; border: 0; background: var(--c-080a08a6); }
-  .sidebar-bottom { display: block; }
-  .sidebar-meta { font-size: 9px; }
   .field-label { margin-top: 7px; }
   .editor-form input { height: 36px; }
   .form-footnote { margin: 9px 0 4px; }
@@ -403,10 +374,6 @@ textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0
 
 /* Toggles for the server sidebar (left) and the snippet panel (right). */
 .snippet-panel { border-right: 0; border-left: 1px solid var(--line); }
-.snippet-panel-top { display: flex; justify-content: flex-start; }
-.snippet-panel-top + .server-list-heading { margin-top: 12px; }
-.snippet-panel-actions { display: flex; gap: 6px; }
-.snippet-panel-actions .icon-button:first-child { border-color: var(--c-424a3e); color: var(--c-aeb8a4); background: transparent; font-size: 17px; }
 
 /* Settings: title, Save/Cancel and section tabs stick to the top of the scrolling dialog. */
 .settings-top { position: sticky; z-index: 2; top: -22px; margin: -22px -24px 0; padding: 22px 24px 0; background: var(--c-20251f); }
@@ -618,3 +585,15 @@ textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0
 
 .about-update { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0 0 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; }
 .about-update .text-action { color: var(--acid); font-size: 12px; }
+
+/* ------------------------------------------------------------------ side panels (servers left, snippets right) */
+.sidebar { padding: 6px 8px 10px; }
+.sidebar-brand-row { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 4px; color: var(--muted); }
+.brand-name { color: var(--text); font-size: 12px; font-weight: 600; line-height: 1; }
+.brand-version { margin-left: 0; font-size: 10px; }
+.server-list-heading { margin: 6px 0 6px; padding-left: 4px; }
+.server-list-heading h1 { font-size: 12px; font-weight: 600; }
+.sidebar-heading-actions { display: flex; align-items: center; gap: 0; }
+.sidebar-heading-actions .icon-button { width: 24px; height: 24px; border: 0; border-radius: 4px; font-size: 15px; }
+.sidebar-heading-actions .icon-button:disabled { cursor: default; opacity: 0.4; }
+.snippet-sidebar-hint { margin-top: 8px; padding: 0 4px; }
