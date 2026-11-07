@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /** Built-in font stacks, used when no font is chosen in Settings → Fonts. */
-export const DEFAULT_UI_FONT = '"Cantarell", "Noto Sans", sans-serif';
+export const DEFAULT_UI_FONT = 'system-ui, "Segoe UI", "Noto Sans", sans-serif';
 export const DEFAULT_TERMINAL_FONT = '"JetBrains Mono", "DejaVu Sans Mono", monospace';
 
 export type FontFamily = { name: string; monospace: boolean };

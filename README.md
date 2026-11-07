@@ -390,7 +390,7 @@ git push origin v0.2.1
 ### Notes for contributors
 
 - **Translations:** UI texts live in `src/i18n.ts`. English is the reference dictionary, and other languages must define the same keys (TypeScript reports missing ones). Error messages from the Rust backend stay in English and are translated in the `backendMessages` table there.
-- **UI colors** are defined in `src/styles.css`. After adding new color values, run `python3 scripts/gen-theme-palette.py`. It replaces them with variables and generates the light variant in `src/theme-palette.css`.
+- **UI colors** live in `src/theme.css`: about 15 named colors (`--bg`, `--surface`, `--border`, `--text`, `--accent`, …), once for the dark and once for the light scheme. Use these variables in `src/styles.css` instead of new color values.
 
 </details>
 

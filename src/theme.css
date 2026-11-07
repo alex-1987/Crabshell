@@ -1,0 +1,43 @@
+/* All interface colors, in one place. Dark is the default; Settings → Color scheme
+   switches to light (uiTheme.ts sets data-theme on <html>). Terminal colors come from the
+   designs (appearance.ts), not from here. One accent color, no gradients, no shadows. */
+
+:root {
+  color-scheme: dark;
+  --bg: #171a16;            /* window, tab bar, side panels */
+  --surface: #20241f;       /* dialogs, menus, popovers */
+  --hover: #292e27;         /* hovered / selected rows and buttons */
+  --input: #121411;         /* text fields */
+  --terminal: #101210;      /* behind terminals and the empty workspace */
+  --border: #30362d;        /* lines and frames */
+  --border-strong: #454c40; /* frames of buttons and focused things */
+  --text: #e3e8dc;
+  --text-muted: #9aa392;
+  --text-faint: #6f786a;
+  --accent: #c7e77a;        /* the one accent: active tab, primary buttons, focus */
+  --accent-text: #192016;   /* text on the accent color */
+  --accent-soft: #c7e77a33; /* translucent accent, e.g. drop zones */
+  --warn: #e7bd72;          /* connecting */
+  --danger: #e98a70;        /* errors, delete */
+  --overlay: #0008;         /* dimmed backdrop behind dialogs */
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f4f0;
+  --surface: #ffffff;
+  --hover: #e6e9e1;
+  --input: #ffffff;
+  --terminal: #fafaf8;
+  --border: #d8dcd2;
+  --border-strong: #b9bfb1;
+  --text: #1d2219;
+  --text-muted: #5b6455;
+  --text-faint: #879080;
+  --accent: #5d8a1c;
+  --accent-text: #ffffff;
+  --accent-soft: #5d8a1c2e;
+  --warn: #a8700f;
+  --danger: #c24a2c;
+  --overlay: #0005;
+}

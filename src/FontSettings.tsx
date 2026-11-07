@@ -42,7 +42,7 @@ export default function FontSettings({ uiFont, terminalFont, onChange }: FontSet
 
       <label className="field-label" htmlFor="ui-font">{t("settings.uiFont")}</label>
       <select disabled={!fonts} id="ui-font" onChange={(event) => onChange({ uiFont: event.target.value, terminalFont })} value={uiFont}>
-        <option value="">{fonts ? t("settings.fontDefault", { name: "Cantarell" }) : t("settings.fontsLoading")}</option>
+        <option value="">{fonts ? t("settings.fontDefault", { name: t("settings.fontSystem") }) : t("settings.fontsLoading")}</option>
         {options(fonts ?? [], uiFont)}
       </select>
       <div className="font-preview" style={{ fontFamily: fontStack(uiFont, DEFAULT_UI_FONT) }}>{t("settings.uiFontPreview")}</div>
