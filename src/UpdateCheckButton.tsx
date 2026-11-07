@@ -1,5 +1,5 @@
 import { getVersion } from "@tauri-apps/api/app";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInBrowser } from "./browser";
 import { useState } from "react";
 import { t } from "./i18n";
 import { checkNow, type CheckResult } from "./updates";
@@ -29,7 +29,7 @@ export default function UpdateCheckButton() {
           {result.kind === "newer" && (
             <>
               {t("update.newer", { version: result.update.version, current })}{" "}
-              <button className="text-action" onClick={() => void openUrl(result.update.url).catch(() => undefined)} type="button">{t("update.openPage")}</button>
+              <button className="text-action" onClick={() => void openInBrowser(result.update.url).catch(() => undefined)} type="button">{t("update.openPage")}</button>
             </>
           )}
         </span>

@@ -1,4 +1,4 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openInBrowser } from "./browser";
 import { useState } from "react";
 import BrandMark from "./BrandMark";
 import Dialog from "./Dialog";
@@ -21,7 +21,7 @@ export default function AboutDialog({ version, update, onDismissUpdate, onClose 
   const [error, setError] = useState("");
 
   function open(url: string) {
-    openUrl(url).catch((openError: unknown) => setError(t("about.openFailed", { error: translateBackend(openError) })));
+    openInBrowser(url).catch((openError: unknown) => setError(t("about.openFailed", { error: translateBackend(openError) })));
   }
 
   return (

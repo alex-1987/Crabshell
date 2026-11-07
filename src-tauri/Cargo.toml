@@ -1,6 +1,6 @@
 [package]
 name = "crabshell"
-version = "0.2.9"
+version = "0.2.10"
 description = "A local OpenSSH terminal manager"
 authors = ["Crabshell"]
 edition = "2021"
@@ -24,6 +24,11 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-window-state = "2"
+
+# Already part of Tauri on Linux (same version); used directly to open links with an
+# activation token (browser.rs).
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
 
 # Smaller dev builds: line numbers for Crabshell itself, no debug info for dependencies.
 # Cuts the size of target/debug considerably and speeds up linking.

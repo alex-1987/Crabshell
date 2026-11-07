@@ -597,9 +597,10 @@ dependencies = [
 
 [[package]]
 name = "crabshell"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "fontdb",
+ "gtk",
  "portable-pty",
  "serde",
  "serde_json",

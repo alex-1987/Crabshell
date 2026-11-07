@@ -1,3 +1,4 @@
+mod browser;
 mod conntest;
 mod desktop;
 mod fonts;
@@ -111,6 +112,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             system_locale,
             fonts::system_fonts,
             conntest::test_connection,
+            browser::open_in_browser,
             save_servers,
             save_settings,
             snippets_list,
