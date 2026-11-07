@@ -1,6 +1,6 @@
 # Ideen für Crabshell
 
-Gesammelte Ideen für kommende Versionen (Stand: 0.2.6, November 2026). Noch nichts davon ist umgesetzt.
+Gesammelte Ideen für kommende Versionen (Stand: 0.2.8, November 2026). Umgesetzte Punkte sind durchgestrichen und mit ✅ markiert.
 
 **Vorschlag für die nächste Version:** Import aus `~/.ssh/config`, Suche im Terminal, automatisch neu verbinden und die Erreichbarkeits-Anzeige mit ms.
 
@@ -43,5 +43,5 @@ Gesammelte Ideen für kommende Versionen (Stand: 0.2.6, November 2026). Noch nic
 16. **Frontend-Tests:**
     - Vitest für die reinen Funktionen in `keybindings.ts`, `osc52.ts`, `persistence.ts` und `labels.ts`.
     - Playwright-Smoke-Tests für die Oberfläche.
-17. **Update-Hinweis:** Beim Start die neueste Release-Version auf GitHub prüfen und dezent anzeigen. Abschaltbar, damit das Versprechen „keine Verbindungen nach außen“ gewahrt bleibt.
+17. ~~**Update-Hinweis:** Beim Start die neueste Release-Version auf GitHub prüfen und dezent anzeigen. Abschaltbar, damit das Versprechen „keine Verbindungen nach außen“ gewahrt bleibt.~~ ✅ umgesetzt in 0.2.8 (standardmäßig aus, Frage in der Anleitung, „Jetzt prüfen“ in den Einstellungen)
 18. **Code-Signing für Windows**, damit die SmartScreen-Warnung verschwindet. Kostet Geld, alternativ SignPath für Open-Source-Projekte.
