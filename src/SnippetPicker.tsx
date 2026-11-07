@@ -47,7 +47,7 @@ export default function SnippetPicker({ snippets, canInsert, onInsert, onManage,
   }
 
   return (
-    <Dialog className="snippet-picker" closeLabel={t("picker.close")} eyebrow={t("picker.eyebrow")} onClose={onClose} onKeyDown={handleKey} title={t("picker.title")} titleId="picker-title">
+    <Dialog className="snippet-picker" closeLabel={t("picker.close")} onClose={onClose} onKeyDown={handleKey} title={t("picker.title")} titleId="picker-title">
       <input
         aria-controls="snippet-results"
         aria-label={t("picker.search")}

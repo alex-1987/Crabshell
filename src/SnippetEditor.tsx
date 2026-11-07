@@ -32,11 +32,11 @@ export default function SnippetEditor({ snippet, onSave, onClose }: SnippetEdito
   }
 
   return (
-    <Dialog closeLabel={t("server.closeDialog")} eyebrow={t("snippetEditor.eyebrow")} onClose={onClose} title={snippet.id ? t("snippetEditor.editTitle") : t("snippetEditor.addTitle")} titleId="snippet-editor-title">
+    <Dialog closeLabel={t("server.closeDialog")} onClose={onClose} title={snippet.id ? t("snippetEditor.editTitle") : t("snippetEditor.addTitle")} titleId="snippet-editor-title">
       <form className="editor-form" onSubmit={(event) => void submit(event)}>
         <label className="field-label" htmlFor="snippet-name">{t("snippetEditor.name")}</label>
         <input autoComplete="off" autoFocus id="snippet-name" maxLength={128} onChange={(event) => setName(event.target.value)} placeholder={t("snippetEditor.namePlaceholder")} value={name} />
-        <label className="field-label" htmlFor="snippet-tags">{t("snippetEditor.tags")} <span>{t("snippetEditor.tagsHint")}</span></label>
+        <label className="field-label" htmlFor="snippet-tags">{t("snippetEditor.tags")}</label>
         <input autoComplete="off" id="snippet-tags" onChange={(event) => setTags(event.target.value)} placeholder={t("snippetEditor.tagsPlaceholder")} spellCheck={false} value={tags} />
         <label className="field-label" htmlFor="snippet-text">{t("snippetEditor.text")}</label>
         <textarea
@@ -53,10 +53,10 @@ export default function SnippetEditor({ snippet, onSave, onClose }: SnippetEdito
           }}
           placeholder={t("snippetEditor.textPlaceholder")}
           rows={7}
+          title={t("snippetEditor.trailingHint")}
           spellCheck={false}
           value={text}
         />
-        <div className="form-footnote">{t("snippetEditor.trailingHint")}</div>
         <div className="snippet-warning">{t("snippets.noPasswords")}</div>
         {error && <div aria-live="polite" className="editor-notice">{error}</div>}
         <div className="editor-actions">

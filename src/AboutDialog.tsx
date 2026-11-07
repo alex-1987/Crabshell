@@ -25,7 +25,7 @@ export default function AboutDialog({ version, update, onDismissUpdate, onClose 
   }
 
   return (
-    <Dialog className="about-dialog" closeLabel={t("about.close")} eyebrow={t("about.eyebrow")} onClose={onClose} title="Crabshell" titleId="about-title">
+    <Dialog className="about-dialog" closeLabel={t("about.close")} onClose={onClose} title="Crabshell" titleId="about-title">
       <div className="about-brand">
         <BrandMark className="about-logo" size={72} />
         <div>

@@ -172,7 +172,6 @@ input:focus { border-color: var(--c-9ebc65); box-shadow: 0 0 0 2px var(--c-c7e77
 .icon-button:hover { border-color: var(--c-424a3e); background: var(--c-272d25); }
 .icon-button:focus-visible, .text-action:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
 
-.page-eyebrow { color: var(--c-9aab79); font-family: var(--font-mono); font-size: 9px; }
 .page-notice { margin: 0 0 14px; color: var(--c-b8c99a); font-size: 11px; }
 .row-icon-button { color: var(--c-899382); }
 .row-icon-button:last-of-type { color: var(--c-c28b7b); }
@@ -597,3 +596,19 @@ textarea.snippet-textarea:focus { border-color: var(--c-9ebc65); box-shadow: 0 0
 .sidebar-heading-actions .icon-button { width: 24px; height: 24px; border: 0; border-radius: 4px; font-size: 15px; }
 .sidebar-heading-actions .icon-button:disabled { cursor: default; opacity: 0.4; }
 .snippet-sidebar-hint { margin-top: 8px; padding: 0 4px; }
+
+/* ------------------------------------------------------------------ dialogs (compact) */
+.server-dialog { padding: 14px 16px 16px; border-radius: 6px; }
+.dialog-heading { align-items: center; margin-bottom: 6px; }
+.dialog-heading h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.dialog-heading .icon-button { width: 26px; height: 26px; margin: 0 -6px 0 0; border: 0; font-size: 16px; }
+.field-label { margin: 10px 0 4px; font-size: 11px; }
+.editor-form .field-label { margin-top: 10px; }
+input, .key-picker-button, .key-picker-clear { height: 32px; }
+.key-picker-clear { width: 32px; }
+.editor-form .key-picker { min-height: 32px; }
+.form-footnote { margin: 8px 0 12px; }
+.editor-actions { gap: 8px; padding-top: 12px; }
+.editor-actions .button { min-width: 90px; height: 30px; }
+.snippet-warning { margin: 6px 0 4px; }
+

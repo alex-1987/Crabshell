@@ -3,7 +3,6 @@ import type { KeyboardEvent, ReactNode } from "react";
 type DialogProps = {
   /** Id of the title element (`aria-labelledby`). */
   titleId: string;
-  eyebrow: ReactNode;
   title: ReactNode;
   closeLabel: string;
   onClose: () => void;
@@ -16,8 +15,8 @@ type DialogProps = {
   children: ReactNode;
 };
 
-/** Modal dialog frame: dimmed backdrop, eyebrow + title, × button. */
-export default function Dialog({ titleId, eyebrow, title, closeLabel, onClose, className, closeOnBackdrop = true, onKeyDown, children }: DialogProps) {
+/** Modal dialog frame: dimmed backdrop, title, × button. */
+export default function Dialog({ titleId, title, closeLabel, onClose, className, closeOnBackdrop = true, onKeyDown, children }: DialogProps) {
   return (
     <div
       className="dialog-scrim"
@@ -27,7 +26,7 @@ export default function Dialog({ titleId, eyebrow, title, closeLabel, onClose, c
     >
       <section aria-labelledby={titleId} aria-modal="true" className={`server-dialog${className ? ` ${className}` : ""}`} role="dialog">
         <header className="dialog-heading">
-          <div><div className="page-eyebrow">{eyebrow}</div><h2 id={titleId}>{title}</h2></div>
+          <h2 id={titleId}>{title}</h2>
           <button aria-label={closeLabel} className="icon-button" onClick={onClose} type="button">×</button>
         </header>
         {children}

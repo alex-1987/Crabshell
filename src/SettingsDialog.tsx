@@ -92,7 +92,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
         {/* Sticky: title, Save/Cancel and the section tabs stay visible while the content scrolls. */}
         <div className="settings-top">
           <header className="dialog-heading settings-heading">
-            <div><div className="page-eyebrow">CRABSHELL</div><h2 id="settings-title">{t("settings.title")}</h2></div>
+            <h2 id="settings-title">{t("settings.title")}</h2>
             <div className="settings-top-actions">
               <button className="button button-secondary" onClick={onClose} type="button">{t("common.cancel")}</button>
               <button className="button button-primary" disabled={saving} onClick={() => void save()} type="button">{t("common.save")}</button>
