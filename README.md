@@ -149,7 +149,7 @@ On the first start, the empty terminal area shows a short getting-started guide 
 
 1. Click **+** in the server list on the left and enter the host (or an alias from `~/.ssh/config`). User, port and key are optional.
 2. Click the server to open it in a new tab. On the first connection, OpenSSH asks you to confirm the server's host key in the terminal. Only accept it after you have checked the fingerprint.
-3. Open **{} Snippets** in the top bar to save commands you use often, and press `Ctrl+Shift+S` to search and paste them.
+3. Open **{}** (Snippets) in the tab bar to save commands you use often, and press `Ctrl+Shift+S` to search and paste them.
 4. Use **⚙** to set the language, theme, click behavior, clipboard options and whether the last tabs reopen on start.
 
 ### Updating and uninstalling
@@ -172,7 +172,7 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 ### Servers and sessions
 - Saved server profiles with label, category, host or `~/.ssh/config` alias, user, port (default 22) and private key. Port 22 is not passed to `ssh`, so a `Port` from `~/.ssh/config` still applies to aliases.
 - Categories group the server list (collapsible). Click a category chip above the list to show only those servers; click it again to show all.
-- Every tab has its own SSH session or local shell. Tabs can be reconnected and closed, and you can switch with `Ctrl+Tab`.
+- Every tab has its own SSH session or local shell; its dot shows the status (connected, connecting, ended, error). Disconnect or reconnect from the tab's right-click menu or the message that appears in an ended terminal; switch tabs with `Ctrl+Tab`.
 - Double-click a tab to rename it (e.g. "prod-db logs"). Enter saves, Escape cancels, an empty name goes back to the automatic title.
 - Right-click a tab for its menu: rename, pick a tab color (quick colors, a custom color or back to the design's color) and close. Name and color are kept when the tabs reopen on start.
 - Split view: show two terminals in one tab, side by side (`Ctrl+Shift+E`) or one above the other (`Ctrl+Shift+O`). The split buttons above the terminal let you choose what the new pane runs: the same server again, a local shell or another saved server. Drag the divider to resize (double-click resets it), switch the layout later, move between panes with a click or `Ctrl+Alt+Arrow`, and close a pane with its × or `Ctrl+Shift+W`.
@@ -202,7 +202,7 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Per-server designs: text, background, cursor, selection and tab color, and font size, with a built-in color picker (hex input and quick colors).
 - Fonts: pick the interface font and the terminal font from the fonts installed on your system (monospaced ones by default, Nerd Fonts included). `Ctrl+Plus` / `Ctrl+Minus` make the text of the current tab larger or smaller, `Ctrl+0` resets it.
 - English and German. The language follows the system locale by default.
-- Update notice: when a newer release is on GitHub, the footer shows "Version x.y.z available" with a link to the release page. Nothing is downloaded or installed automatically. The check is off until you turn it on: the welcome guide asks once, and ⚙ Settings → Updates has the switch and a "Check now" button. Hide the notice per version with ×.
+- Update notice: when a newer release is on GitHub, a dot appears on the ⓘ button, and ⓘ About shows "Version x.y.z available" with a link to the release page. Nothing is downloaded or installed automatically. The check is off until you turn it on: the welcome guide asks once, and ⚙ Settings → Updates has the switch and a "Check now" button. Hide the notice per version with ×.
 
 ### Shortcuts
 
@@ -242,7 +242,7 @@ To copy and paste between your computer and [micro](https://micro-editor.github.
 }
 ```
 
-- **Copy:** select text in micro and press `Ctrl+C`. micro sends it to Crabshell, which puts it into your local clipboard. The status bar shows "The program copied text to the clipboard."
+- **Copy:** select text in micro and press `Ctrl+C`. micro sends it to Crabshell, which puts it into your local clipboard. A short message in the terminal says "The program copied text to the clipboard."
 - **Paste with `Ctrl+V` in micro:** micro asks Crabshell for the local clipboard. The first time per session, Crabshell asks whether the server may read it (*Deny* or *Allow for this session*). micro only waits 200 ms for the answer, which is too short for the dialog, so press `Ctrl+V` **once more** after allowing it. From then on, `Ctrl+V` works straight away until you disconnect.
 - **Paste with `Ctrl+Shift+V`** (or right-click → Paste) always works and never gives the server access to your clipboard.
 

@@ -1,13 +1,12 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import AboutDialog from "./AboutDialog";
 import { defaultSettings } from "./appearance";
 import { ClipboardReadDialog, CloseConfirmDialog, PasteConfirmDialog } from "./ConfirmDialogs";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
-import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabColorOf, titleOf } from "./labels";
+import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabColorOf, titleOf, withShortcut } from "./labels";
 import { clearLegacyStorage, loadLegacyServers, loadLegacySettings, readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
 import ServerDialog from "./ServerDialog";
 import ServerSidebar, { type ServerFilters } from "./ServerSidebar";
@@ -20,7 +19,7 @@ import SplitMenu from "./SplitMenu";
 import TabMenu from "./TabMenu";
 import TabRenameField from "./TabRenameField";
 import TerminalContextMenu from "./TerminalContextMenu";
-import TerminalTabPanel from "./TerminalTabPanel";
+import TerminalTabPanel, { SplitIcon } from "./TerminalTabPanel";
 import { terminalStore } from "./terminalStore";
 import type { AppSettings, SavedHost, SessionState, SplitDirection, SplitTarget } from "./terminalTypes";
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
@@ -30,22 +29,6 @@ import { useUpdateCheck } from "./updates";
 import { useTabDrag } from "./useTabDrag";
 import WelcomeGuide from "./WelcomeGuide";
 import "./styles.css";
-
-/** Shortcut summary in the footer, built from the current key bindings. */
-function footerShortcuts(): string {
-  const key = terminalStore.shortcutLabel.bind(terminalStore);
-  return [
-    [key("copy"), key("paste"), t("footer.copyPaste")],
-    [key("snippets"), t("footer.snippets")],
-    [key("localShell"), t("footer.localShell")],
-    [key("splitRight"), key("splitDown"), t("footer.split")],
-    [key("close"), t("footer.close")],
-  ].map((parts) => {
-    const label = parts.pop() ?? "";
-    const keys = parts.filter(Boolean).join(" / ");
-    return keys ? `${keys} ${label}` : "";
-  }).filter(Boolean).join(" · ");
-}
 
 export default function TabsApp() {
   const [savedHosts, setSavedHosts] = useState<SavedHost[]>([]);
@@ -351,54 +334,54 @@ export default function TabsApp() {
       )}
 
       <main className="workspace">
-        <header className="topbar">
-          <div className="topbar-left">
-            <button aria-controls="server-sidebar" aria-label={serversLabel} aria-pressed={panels.showServers} className="panel-toggle" disabled={!usable} onClick={panels.toggleServers} title={serversLabel} type="button"><span aria-hidden="true">☰</span><span className="panel-toggle-label">{t("sidebar.servers")}</span></button>
-            <div className="breadcrumb"><span>CRABSHELL</span><i>/</i><strong>{t("topbar.terminal")}</strong></div>
+        <div className="tabbar">
+          <button aria-controls="server-sidebar" aria-label={serversLabel} aria-pressed={panels.showServers} className="tabbar-button" disabled={!usable} onClick={panels.toggleServers} title={serversLabel} type="button"><span aria-hidden="true">☰</span></button>
+          <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
+            {tabs.map((tab) => (
+              <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab) } as CSSProperties}>
+                {renamingTabId === tab.id ? (
+                  <TabRenameField
+                    onDone={(title) => {
+                      setRenamingTabId(null);
+                      if (title !== null) terminalStore.renameTab(tab.id, title);
+                      terminalStore.focusActiveTerminal();
+                    }}
+                    placeholder={automaticTitleOf(tab)}
+                    value={tab.customTitle}
+                  />
+                ) : (
+                  <button aria-selected={tab.id === activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} onDoubleClick={() => setRenamingTabId(tab.id)} role="tab" title={`${titleOf(tab)} · ${statusLabel(tab.status)}\n${t("tabs.renameHint")}, ${t("drag.hint")}`} type="button" {...tabDrag.tabHandlers(tab.id)}>
+                    <span className={`tab-status-dot status-${tab.status}`} />
+                    <span className="terminal-tab-title">{titleOf(tab)}</span>
+                  </button>
+                )}
+                <button aria-label={t("tabs.close", { name: titleOf(tab) })} className="terminal-tab-close" onClick={() => void terminalStore.closeTab(tab.id)} title={withShortcut(t("tabs.closeTitle"), terminalStore.shortcutLabel("close"))} type="button">×</button>
+              </div>
+            ))}
           </div>
-          <div className="topbar-actions">
-            <span className="active-host-label">{activeTab ? titleOf(activeTab) : t("topbar.noSession")}</span>
-            <span className={`connection-label label-${activeTab?.status ?? "disconnected"}`}><span className="status-led" />{statusLabel(activeTab?.status ?? "disconnected")}</span>
-            {activeTab && (activeTab.status === "disconnected" || activeTab.status === "failed") && (
-              <button className="connect-button" onClick={() => void terminalStore.connect(activeTab.id)} type="button">{activeTab.kind === "local" ? t("topbar.restart") : t("topbar.reconnect")} <span aria-hidden="true">↻</span></button>
-            )}
-            <button className="disconnect-button" disabled={!activeTab || (activeTab.status !== "connected" && activeTab.status !== "connecting")} onClick={() => activeTab && void terminalStore.disconnect(activeTab.id)} type="button"><span aria-hidden="true">■</span> {activeTab?.kind === "local" ? t("topbar.stop") : t("topbar.disconnect")}</button>
-            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets} className="panel-toggle" disabled={!usable} onClick={panels.toggleSnippets} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span><span className="panel-toggle-label">{t("sidebar.snippets")}</span></button>
-            <button aria-label={t("topbar.themeToggle", { mode: themeModeLabel(appSettings.themeMode) })} className="icon-button settings-button theme-toggle" disabled={!usable} onClick={cycleThemeMode} title={t("topbar.themeTitle", { mode: themeModeLabel(appSettings.themeMode) })} type="button"><span aria-hidden="true">{themeIcon}</span></button>
-            <button aria-label={t("about.open")} className="icon-button settings-button" onClick={() => setAboutOpen(true)} title={t("about.open")} type="button"><span aria-hidden="true">ⓘ</span></button>
-            <button aria-label={t("topbar.openSettings")} className="icon-button settings-button" disabled={!usable} onClick={() => setSettingsOpen({})} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
-          </div>
-        </header>
-
-        <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
-          {tabs.map((tab) => (
-            <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab) } as CSSProperties}>
-              {renamingTabId === tab.id ? (
-                <TabRenameField
-                  onDone={(title) => {
-                    setRenamingTabId(null);
-                    if (title !== null) terminalStore.renameTab(tab.id, title);
-                    terminalStore.focusActiveTerminal();
-                  }}
-                  placeholder={automaticTitleOf(tab)}
-                  value={tab.customTitle}
-                />
-              ) : (
-                <button aria-selected={tab.id === activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} onDoubleClick={() => setRenamingTabId(tab.id)} role="tab" title={`${titleOf(tab)} · ${t("tabs.renameHint")}, ${t("drag.hint")}`} type="button" {...tabDrag.tabHandlers(tab.id)}>
-                  <span className={`tab-status-dot status-${tab.status}`} />
-                  {tab.kind === "local" && <span aria-label={t("tabs.local")} className="tab-kind-local">&gt;_</span>}
-                  <span className="terminal-tab-title">{titleOf(tab)}</span>
+          <button aria-label={t("tabs.openLocal")} className="tabbar-button add-tab-button" onClick={() => terminalStore.openLocalShell()} title={withShortcut(t("tabs.openLocalTitle"), terminalStore.shortcutLabel("localShell"))} type="button"><span aria-hidden="true">+</span></button>
+          <div className="tabbar-actions">
+            {activeTab && (["row", "column"] as const).map((direction) => {
+              // Already split: the buttons switch the layout instead of adding a pane.
+              const label = activeTab.panes.length > 1
+                ? t(direction === "row" ? "menu.layoutRow" : "menu.layoutColumn")
+                : withShortcut(t(direction === "row" ? "menu.splitRow" : "menu.splitColumn"), terminalStore.shortcutLabel(direction === "row" ? "splitRight" : "splitDown"));
+              return (
+                <button aria-label={label} aria-pressed={activeTab.panes.length > 1 && activeTab.split === direction} className="tabbar-button" key={direction} onClick={(event) => requestSplit(direction, event.currentTarget.getBoundingClientRect())} title={label} type="button">
+                  <SplitIcon direction={direction} />
                 </button>
-              )}
-              <button aria-label={t("tabs.close", { name: titleOf(tab) })} className="terminal-tab-close" onClick={() => void terminalStore.closeTab(tab.id)} title={t("tabs.closeTitle")} type="button">×</button>
-            </div>
-          ))}
-          <button aria-label={t("tabs.openLocal")} className="icon-button add-tab-button" onClick={() => terminalStore.openLocalShell()} title={t("tabs.openLocalTitle")} type="button"><span aria-hidden="true">+</span></button>
+              );
+            })}
+            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets} className="tabbar-button" disabled={!usable} onClick={panels.toggleSnippets} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
+            <button aria-label={t("topbar.themeToggle", { mode: themeModeLabel(appSettings.themeMode) })} className="tabbar-button" disabled={!usable} onClick={cycleThemeMode} title={t("topbar.themeTitle", { mode: themeModeLabel(appSettings.themeMode) })} type="button"><span aria-hidden="true">{themeIcon}</span></button>
+            <button aria-label={update ? t("update.available", { version: update.version }) : t("about.open")} className={`tabbar-button${update ? " tabbar-button-badge" : ""}`} onClick={() => setAboutOpen(true)} title={update ? `${t("about.open")} · ${t("update.available", { version: update.version })}` : t("about.open")} type="button"><span aria-hidden="true">ⓘ</span></button>
+            <button aria-label={t("topbar.openSettings")} className="tabbar-button" disabled={!usable} onClick={() => setSettingsOpen({})} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
+          </div>
         </div>
 
         <div className={`terminal-panels${tabs.length === 0 ? " terminal-panels-empty" : ""}`}>
           {tabs.length > 0 ? tabs.map((tab) => (
-            <TerminalTabPanel active={tab.id === activeTabId} key={tab.id} onSplit={(direction, anchor) => requestSplit(direction, anchor)} tab={tab} />
+            <TerminalTabPanel active={tab.id === activeTabId} key={tab.id} tab={tab} />
           )) : welcomeHidden ? (
             <div className="terminal-empty">
               <span>{t("tabs.empty")}<br /><button className="text-action" onClick={() => setWelcome(false)} type="button">{t("welcome.show")}</button></span>
@@ -421,18 +404,6 @@ export default function TabsApp() {
           )}
         </div>
 
-        <footer className="workspace-footer">
-          <span className="footer-version">
-            Crabshell <b>{appVersion}</b>
-            {update && (
-              <span className="update-notice">
-                <button className="update-link" onClick={() => void openUrl(update.url).catch(() => undefined)} title={t("update.open", { version: update.version })} type="button">↑ {t("update.available", { version: update.version })}</button>
-                <button aria-label={t("update.dismiss")} className="update-dismiss" onClick={dismissUpdate} title={t("update.dismiss")} type="button">×</button>
-              </span>
-            )}
-          </span>
-          <span>{footerShortcuts()}</span>
-        </footer>
       </main>
 
       {panels.showSnippets && (
@@ -494,6 +465,11 @@ export default function TabsApp() {
           onCloseTab={() => { setTabMenu(null); void terminalStore.closeTab(menuTab.id); }}
           onColor={(color) => terminalStore.setTabColor(menuTab.id, color)}
           onRename={() => { setTabMenu(null); setRenamingTabId(menuTab.id); }}
+          onSession={() => {
+            setTabMenu(null);
+            const running = menuTab.status === "connected" || menuTab.status === "connecting";
+            void (running ? terminalStore.disconnect(menuTab.id) : terminalStore.connect(menuTab.id));
+          }}
           tab={menuTab}
           x={tabMenu.x}
           y={tabMenu.y}
@@ -512,7 +488,7 @@ export default function TabsApp() {
         />
       )}
       {terminalSnapshot.contextMenu && <TerminalContextMenu key={`${terminalSnapshot.contextMenu.x},${terminalSnapshot.contextMenu.y}`} menu={terminalSnapshot.contextMenu} />}
-      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} version={appVersion} />}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} onDismissUpdate={dismissUpdate} update={update} version={appVersion} />}
       {pickerOpen && (
         <SnippetPicker
           canInsert={canInsertSnippet}
