@@ -53,16 +53,14 @@ The `.deb` and `.rpm` packages need glibc 2.35 or newer (Ubuntu 22.04, Debian 12
 
 ### Quick install from the terminal
 
-Each block below downloads the latest release and installs it. You can paste a block as a whole. The first line asks GitHub for the newest version number.
+Each block below asks GitHub for the file of the latest release, downloads and installs it. You can paste a block as a whole. The commands work in bash, zsh and fish (3.4 or newer).
 
 <details open>
 <summary><b>Debian, Ubuntu, Linux Mint, Pop!_OS</b> (.deb)</summary>
 
-```bash
-VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
-ARCH=$(dpkg --print-architecture)    # amd64 or arm64
-curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell_${VERSION}_${ARCH}.deb"
-sudo apt install "./Crabshell_${VERSION}_${ARCH}.deb"
+```sh
+curl -fLo crabshell.deb "$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb")"
+sudo apt install ./crabshell.deb
 ```
 
 The `./` in front of the file name matters: without it, `apt` searches its online repositories instead.
@@ -72,10 +70,9 @@ The `./` in front of the file name matters: without it, `apt` searches its onlin
 <details>
 <summary><b>Fedora, RHEL, AlmaLinux, Rocky Linux</b> (.rpm)</summary>
 
-```bash
-VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
-curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell-${VERSION}-1.$(uname -m).rpm"
-sudo dnf install "./Crabshell-${VERSION}-1.$(uname -m).rpm"
+```sh
+curl -fLo crabshell.rpm "$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | grep -o "https://[^\"]*\.$(uname -m)\.rpm")"
+sudo dnf install ./crabshell.rpm
 ```
 
 </details>
@@ -83,10 +80,9 @@ sudo dnf install "./Crabshell-${VERSION}-1.$(uname -m).rpm"
 <details>
 <summary><b>openSUSE</b> (.rpm)</summary>
 
-```bash
-VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
-curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell-${VERSION}-1.$(uname -m).rpm"
-sudo zypper install --allow-unsigned-rpm "./Crabshell-${VERSION}-1.$(uname -m).rpm"
+```sh
+curl -fLo crabshell.rpm "$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | grep -o "https://[^\"]*\.$(uname -m)\.rpm")"
+sudo zypper install --allow-unsigned-rpm ./crabshell.rpm
 ```
 
 The package is not signed with a GPG key, so `zypper` needs `--allow-unsigned-rpm`.
@@ -96,24 +92,22 @@ The package is not signed with a GPG key, so `zypper` needs `--allow-unsigned-rp
 <details>
 <summary><b>Arch Linux, CachyOS, EndeavourOS, Manjaro, Garuda</b> (.pkg.tar.zst)</summary>
 
-```bash
-VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
-sudo pacman -U "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/crabshell-${VERSION}-1-x86_64.pkg.tar.zst"
+```sh
+curl -fLo crabshell.pkg.tar.zst "$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | grep -o 'https://[^"]*-x86_64\.pkg\.tar\.zst')"
+sudo pacman -U ./crabshell.pkg.tar.zst
 ```
 
-`pacman` downloads the file itself. The prebuilt package is for x86_64 only. On ARM, [build it with `makepkg`](#3a-arch-based-distributions-build-a-pacman-package).
+Download first, then install the local file: given a URL, `pacman -U` also looks for a GPG signature (`.sig`), which the packages do not have yet. The prebuilt package is for x86_64 only. On ARM, [build it with `makepkg`](#3a-arch-based-distributions-build-a-pacman-package).
 
 </details>
 
 <details>
 <summary><b>Any other distribution</b> (AppImage, no installation)</summary>
 
-```bash
-VERSION=$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
-case "$(uname -m)" in x86_64) ARCH=amd64 ;; aarch64) ARCH=aarch64 ;; esac
-curl -fLO "https://github.com/alex-1987/Crabshell/releases/download/v${VERSION}/Crabshell_${VERSION}_${ARCH}.AppImage"
-chmod +x "Crabshell_${VERSION}_${ARCH}.AppImage"
-"./Crabshell_${VERSION}_${ARCH}.AppImage"
+```sh
+curl -fLo Crabshell.AppImage "$(curl -fsSL https://api.github.com/repos/alex-1987/Crabshell/releases/latest | grep -o "https://[^\"]*_$(uname -m | sed s/x86_64/amd64/)\.AppImage")"
+chmod +x Crabshell.AppImage
+./Crabshell.AppImage
 ```
 
 An AppImage is a single file you can put anywhere, for example in `~/Applications`. To get Crabshell into your application menu and the proper icon in the taskbar, open **⚙ Settings → Application menu and taskbar → Add to application menu** once (only shown when running the AppImage). If it refuses to start with a FUSE error, install `libfuse2` (`fuse2` on Arch, `fuse-libs` on Fedora), or run it with `--appimage-extract-and-run`.
