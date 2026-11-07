@@ -479,7 +479,11 @@ export default function TabsApp() {
       {terminalSnapshot.pendingPaste && (
         <PasteConfirmDialog
           onCancel={() => terminalStore.cancelPendingPaste()}
-          onConfirm={() => terminalStore.confirmPendingPaste()}
+          onConfirm={(remember) => {
+            // "Never ask" switches off Settings → Confirm multiline paste.
+            if (remember === "never") persistSettings({ ...settingsRef.current, confirmMultilinePaste: false });
+            terminalStore.confirmPendingPaste(remember === "session");
+          }}
           paste={terminalSnapshot.pendingPaste}
           targetName={tabName(terminalSnapshot.pendingPaste.tabId)}
         />

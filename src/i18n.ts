@@ -125,6 +125,8 @@ const en = {
   "paste.summary": "{lines} lines · {chars} characters into",
   "paste.warning": "Line breaks may run commands immediately.",
   "paste.confirm": "Paste",
+  "paste.dontAskSession": "Don't ask again in this session",
+  "paste.dontAskNever": "Never ask again (can be changed in Settings)",
 
   // Server dialog
   "server.editTitle": "Edit server",
@@ -558,6 +560,8 @@ const de: Record<MessageKey, string> = {
   "paste.summary": "{lines} Zeilen · {chars} Zeichen in",
   "paste.warning": "Zeilenumbrüche können Befehle sofort ausführen.",
   "paste.confirm": "Einfügen",
+  "paste.dontAskSession": "In dieser Sitzung nicht mehr fragen",
+  "paste.dontAskNever": "Nie mehr fragen (in den Einstellungen änderbar)",
 
   "server.editTitle": "Server bearbeiten",
   "server.addTitle": "Neuen Server hinzufügen",

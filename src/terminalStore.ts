@@ -52,6 +52,8 @@ type PaneRuntime = {
   selectionTimer: number | null;
   /** The user allowed OSC 52 clipboard reads for the current session. */
   clipboardReadAllowed: boolean;
+  /** The user chose "don't ask again in this session" for multiline pastes. */
+  multilinePasteAllowed: boolean;
   /** Keeps terminal input in order, e.g. a pasted snippet before the Enter that runs it. */
   writeChain: Promise<void>;
   /**
@@ -203,7 +205,8 @@ class TerminalStore {
 
   /**
    * Pastes a snippet into the active pane (never sends it on its own). Trailing line
-   * breaks are removed first; multiline snippets always need a confirmation.
+   * breaks are removed first; multiline snippets always need a confirmation, unless the
+   * user chose "don't ask again in this session".
    * With `execute`, Enter is sent afterwards. Returns false when no session is connected.
    */
   insertSnippet(text: string, execute: boolean): boolean {
@@ -214,7 +217,7 @@ class TerminalStore {
       return false;
     }
     if (!trimmed) return true;
-    if (/[\r\n]/.test(trimmed)) {
+    if (/[\r\n]/.test(trimmed) && !this.runtimes.get(paneId)?.multilinePasteAllowed) {
       this.pendingPaste = { tabId: this.tabOf(paneId)?.id ?? "", paneId, text: trimmed, source: "snippet", execute };
       this.publish();
       return true;
@@ -397,7 +400,7 @@ class TerminalStore {
       this.updatePane(paneId, { notice: t("notice.pasteNoSession") });
       return;
     }
-    if (this.clipboardPreferences.confirmMultilinePaste && /[\r\n]/.test(text)) {
+    if (this.clipboardPreferences.confirmMultilinePaste && !runtime.multilinePasteAllowed && /[\r\n]/.test(text)) {
       this.pendingPaste = { tabId: runtime.tabId, paneId, text, source: "clipboard", execute: false };
       this.publish();
       return;
@@ -405,13 +408,15 @@ class TerminalStore {
     runtime.terminal.paste(text);
   }
 
-  confirmPendingPaste(): void {
+  /** With `allowForSession`, further multiline pastes into this session are not asked again. */
+  confirmPendingPaste(allowForSession = false): void {
     const pending = this.pendingPaste;
     if (!pending) return;
     this.pendingPaste = null;
     this.publish();
     const runtime = this.runtimes.get(pending.paneId);
     if (!runtime || runtime.closing) return;
+    if (allowForSession) runtime.multilinePasteAllowed = true;
     if (this.canSendInput(pending.paneId)) {
       this.pasteNow(pending.paneId, pending.text, pending.execute);
     } else {
@@ -641,6 +646,7 @@ class TerminalStore {
       closing: false,
       selectionTimer: null,
       clipboardReadAllowed: false,
+      multilinePasteAllowed: false,
       writeChain: Promise.resolve(),
       startOnFit: true,
     };
@@ -844,8 +850,9 @@ class TerminalStore {
 
     const sessionId = crypto.randomUUID();
     runtime.sessionId = sessionId;
-    // Clipboard read permission only lasts for one session.
+    // Clipboard read permission and "don't ask again" for pastes only last for one session.
     runtime.clipboardReadAllowed = false;
+    runtime.multilinePasteAllowed = false;
     if (this.pendingClipboardRead?.paneId === paneId) this.pendingClipboardRead = null;
     runtime.terminal.reset();
     if (server) {
