@@ -506,6 +506,13 @@ export default function TabsApp() {
     if (settingsRef.current.rightPanel !== panel) persistSettings({ ...settingsRef.current, rightPanel: panel });
   }
 
+  /** {} in the tab bar: shows the snippets, or hides the panel when it already shows them. */
+  function toggleSnippetPanel() {
+    if (panels.showSnippets && settingsRef.current.rightPanel === "snippets") return panels.toggleSnippets();
+    setRightPanel("snippets");
+    if (!panels.showSnippets) panels.toggleSnippets();
+  }
+
   /** 📁 in the tab bar: shows the file browser, or hides the panel when it already shows it. */
   function toggleFilePanel() {
     if (panels.showSnippets && settingsRef.current.rightPanel === "files") return panels.toggleSnippets();
@@ -657,7 +664,7 @@ export default function TabsApp() {
             <button aria-label={t("topbar.openSettings")} className="tabbar-button" disabled={!usable} onClick={() => setSettingsOpen({})} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
             {/* The snippet panel opens on the right, so its toggle sits at the far right. */}
             <span aria-hidden="true" className="tabbar-separator" />
-            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets && appSettings.rightPanel === "snippets"} className="tabbar-button" disabled={!usable} onClick={() => (panels.showSnippets && appSettings.rightPanel !== "snippets" ? setRightPanel("snippets") : panels.toggleSnippets())} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
+            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets && appSettings.rightPanel === "snippets"} className="tabbar-button" disabled={!usable} onClick={toggleSnippetPanel} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
             <button aria-controls="snippet-panel" aria-label={t("files.toggle")} aria-pressed={panels.showSnippets && appSettings.rightPanel === "files"} className="tabbar-button" disabled={!usable} onClick={toggleFilePanel} title={t("files.toggle")} type="button"><span aria-hidden="true">📁</span></button>
           </div>
         </div>
