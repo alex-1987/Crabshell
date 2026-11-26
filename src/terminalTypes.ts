@@ -26,6 +26,8 @@ export type Appearance = {
    * use for user@host. Empty keeps the automatic color.
    */
   promptColor: string;
+  /** Tabs of this design show no color line; tabColor is kept for switching it back on. */
+  hideTabColor?: boolean;
 };
 
 import type { LanguageSetting } from "./i18n";

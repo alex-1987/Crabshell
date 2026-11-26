@@ -147,7 +147,7 @@ If both values are identical, the file arrived unchanged.
 
 On the first start, the empty terminal area shows a short getting-started guide with the same steps (you can hide it there).
 
-1. Click **+** in the server list on the left and enter the host (or an alias from `~/.ssh/config`). User, port and key are optional.
+1. Click **+** in the server list on the left and enter the host (or an alias from `~/.ssh/config`). User, port and key are optional. Or click **⤓** to import hosts from `~/.ssh/config`.
 2. Click the server to open it in a new tab. On the first connection, OpenSSH asks you to confirm the server's host key in the terminal. Only accept it after you have checked the fingerprint.
 3. Open **{}** (Snippets) in the tab bar to save commands you use often, and press `Ctrl+Shift+S` to search and paste them.
 4. Use **⚙** to set the language, theme, click behavior, clipboard options and whether the last tabs reopen on start.
@@ -178,7 +178,8 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Split view: show two terminals in one tab, side by side (`Ctrl+Shift+E`) or one above the other (`Ctrl+Shift+O`). The split buttons above the terminal let you choose what the new pane runs: the same server again, a local shell or another saved server. Drag the divider to resize (double-click resets it), switch the layout later, move between panes with a click or `Ctrl+Alt+Arrow`, and close a pane with its × or `Ctrl+Shift+W`.
 - Drag tabs with the mouse: drop them on the tab strip to reorder, or onto the terminal of another tab to put both side by side. The edge you drop on (left, right, top, bottom) decides where it goes; hovering over a tab while dragging brings it to the front. ⇱ in a pane's header moves it back into its own tab. Sessions keep running while you rearrange them.
 - `+` next to the tabs (or `Ctrl+Shift+N`) opens a new tab: choose a local shell, one of your saved servers (with a search field when you have many) or **New connection …**. That opens the server form with **Connect only**, which opens the tab without saving anything (such tabs are not restored on the next start), and **Save and connect**.
-- **Test** in the server form checks a server without logging in: it resolves the host like OpenSSH (`ssh -G`, so `~/.ssh/config` aliases work), connects to the port and reads the SSH version line, e.g. "Reachable: 10.0.0.5:22 · OpenSSH_9.6 · 23 ms". Servers behind `ProxyJump`/`ProxyCommand` cannot be tested directly. `Ctrl+Shift+T` opens a local shell right away: your login shell (`$SHELL`) in your home directory, PowerShell on Windows.
+- **Test** in the server form checks a server without logging in: it resolves the host like OpenSSH (`ssh -G`, so `~/.ssh/config` aliases work), connects to the port and reads the SSH version line, e.g. "Reachable: 10.0.0.5:22 · OpenSSH_9.6 · 23 ms". Servers behind `ProxyJump`/`ProxyCommand` cannot be tested directly.
+- **Import from `~/.ssh/config`** (⤓ in the server list): lists the concrete `Host` aliases, including files pulled in with `Include`, and saves the selected ones into a category of your choice. Only the alias is saved, so OpenSSH keeps reading host name, user, port, key and `ProxyJump` from the config. Patterns such as `Host *` and `Match` blocks are skipped, and hosts that are already saved are marked. `Ctrl+Shift+T` opens a local shell right away: your login shell (`$SHELL`) in your home directory, PowerShell on Windows.
 - Optionally reopen the tabs from last time on start, or always start with an empty workspace.
 - OpenSSH runs in a real PTY: full-screen programs, colors and resizing work as in any terminal.
 - Closing the window while sessions are still running asks first ("3 sessions are still running"). Tick *Don't ask again* or turn it off in Settings. On close, every session is ended like in any other terminal (SIGHUP), so programs on the server stop unless they run in `tmux`, `screen` or with `nohup`.
@@ -237,7 +238,7 @@ Everything is in `~/.config/dev.crabshell.app/` (Windows: `%APPDATA%\dev.crabshe
 | `.window-state.json` | Window size, position, maximized and fullscreen (written by the Tauri window-state plugin) |
 | `session.json` | Which tabs and split panes were open (tab type, server id, tab name and color only, never terminal contents) |
 
-Not included yet: more than two panes per tab, SSH config import, snippet variables, snippet import/export and SFTP.
+Not included yet: more than two panes per tab, snippet variables, snippet import/export and SFTP.
 
 ## micro over SSH
 

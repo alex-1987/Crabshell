@@ -2,21 +2,11 @@
 
 Gesammelte Ideen für kommende Versionen (Stand: 0.2.8, November 2026). Umgesetzte Punkte sind durchgestrichen und mit ✅ markiert.
 
-**Vorschlag für die nächste Version:** Import aus `~/.ssh/config`, Suche im Terminal, automatisch neu verbinden und die Erreichbarkeits-Anzeige mit ms.
-
-## Erreichbarkeit / Latenz (ms-Anzeige)
-
-- **Kein echtes ICMP-Ping:** Unter Linux braucht es dafür Sonderrechte, und viele Server oder Firewalls blockieren ICMP.
-- **Stattdessen die Zeit für den TCP-Verbindungsaufbau zum SSH-Port messen.** Das ist ein kleiner Rust-Befehl ohne Zusatzrechte, der die laufende Sitzung nicht berührt.
-- **Anzeige in der Serverliste:** `● 23 ms` in Grün, Gelb oder Rot, grau für „nicht erreichbar“. Gemessen wird beim Öffnen der Seitenleiste und dann etwa alle 30–60 s, nur für sichtbare Server.
-- **Grenzen:**
-  - Die Latenz *innerhalb* einer laufenden SSH-Sitzung lässt sich so nicht messen.
-  - Bei Aliasen mit `ProxyJump` in `~/.ssh/config` würde der falsche Host gemessen. Diese Server bekommen keine Anzeige.
-- **Fazit:** Nützlich als Anzeige „Server ist erreichbar“, nicht als Live-Latenz einer Sitzung.
+**Vorschlag für die nächste Version:** Suche im Terminal und automatisch neu verbinden.
 
 ## Großer Nutzen, überschaubarer Aufwand
 
-1. **Import aus `~/.ssh/config`:** Hosts als Server vorschlagen und per Häkchen übernehmen.
+1. ~~**Import aus `~/.ssh/config`:** Hosts als Server vorschlagen und per Häkchen übernehmen.~~ ✅ umgesetzt
 2. **Suche im Terminal** mit `Ctrl+Shift+F`, über das xterm-Addon `@xterm/addon-search`.
 3. **Automatisch neu verbinden:** Nach einem Abbruch (Standby, WLAN-Wechsel) „In 5 s neu verbinden“ anbieten, auf Wunsch automatisch.
 4. **Snippet-Variablen** wie `systemctl restart {{dienst}}`, die beim Einfügen kurz abgefragt werden.

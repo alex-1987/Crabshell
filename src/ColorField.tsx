@@ -87,10 +87,15 @@ type ColorFieldProps = {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /**
+   * Offers "no color" as the first preset (tab color). `active` shows the field as empty; picking
+   * any color calls onChange as usual, so the caller switches "no color" off there.
+   */
+  none?: { active: boolean; label: string; onSelect: () => void };
 };
 
 /** Colour swatch with an in-app picker (the GTK colour dialog of WebKitGTK does not show colours reliably). */
-export default function ColorField({ label, value, onChange }: ColorFieldProps) {
+export default function ColorField({ label, value, onChange, none }: ColorFieldProps) {
   const [open, setOpen] = useState(false);
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
   const [hexText, setHexText] = useState(value);
@@ -143,16 +148,16 @@ export default function ColorField({ label, value, onChange }: ColorFieldProps) 
       <button
         aria-expanded={open}
         aria-label={label}
-        className="color-swatch"
+        className={`color-swatch${none?.active ? " swatch-none" : ""}`}
         onClick={() => {
           if (!open) setPlacement(placementFor(rootRef.current));
           setOpen(!open);
         }}
-        style={{ background: value }}
+        style={none?.active ? undefined : { background: value }}
         type="button"
       />
       <span>{label}</span>
-      <code>{value}</code>
+      <code>{none?.active ? none.label : value}</code>
 
       {open && (
         <div className={`color-popover${placement.right ? " color-popover-right" : ""}${placement.up ? " color-popover-up" : ""}`} role="dialog" aria-label={label}>
@@ -187,10 +192,24 @@ export default function ColorField({ label, value, onChange }: ColorFieldProps) 
             />
           </div>
           <div className="color-presets">
-            {PRESETS.map((preset) => (
+            {none && (
+              <button
+                aria-label={none.label}
+                aria-pressed={none.active}
+                className="color-preset swatch-none"
+                onClick={() => {
+                  none.onSelect();
+                  setOpen(false);
+                }}
+                title={none.label}
+                type="button"
+              />
+            )}
+            {/* With "no color" in front, the near-black first preset makes room (still 3 rows). */}
+            {(none ? PRESETS.slice(1) : PRESETS).map((preset) => (
               <button
                 aria-label={preset}
-                aria-pressed={preset === value}
+                aria-pressed={!none?.active && preset === value}
                 className="color-preset"
                 key={preset}
                 onClick={() => commitHex(preset)}

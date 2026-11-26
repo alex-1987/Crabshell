@@ -67,6 +67,8 @@ const en = {
 
   // Tabs and terminal frame
   "tabs.label": "Terminal tabs",
+  "tabs.scrollLeft": "{count} more tabs on the left",
+  "tabs.scrollRight": "{count} more tabs on the right",
   "tabs.localShell": "Local shell",
   "tabs.close": "Close {name}",
   "tabs.closeTitle": "Close tab",
@@ -76,6 +78,7 @@ const en = {
   "tabMenu.rename": "Rename",
   "tabMenu.color": "Tab color",
   "tabMenu.colorDefault": "Design color",
+  "tabMenu.colorNone": "No color",
   "tabMenu.colorCustom": "Custom color",
   "tabMenu.close": "Close tab",
   "tabs.openLocalTitle": "Local shell",
@@ -161,6 +164,22 @@ const en = {
   "server.testTitle": "Checks whether the server is reachable and an SSH server answers. No login, no password.",
   "server.testRunning": "Testing …",
   "server.testOk": "Reachable: {address} · {banner} · {millis} ms",
+
+  // Import from ~/.ssh/config
+  "sidebar.importSshConfig": "Import from ~/.ssh/config",
+  "import.title": "Import from ~/.ssh/config",
+  "import.close": "Close import",
+  "import.intro": "Each selected host is saved with its alias only. OpenSSH keeps reading host name, user, port, key and ProxyJump from the config, so later changes there still apply.",
+  "import.loading": "Reading ~/.ssh/config …",
+  "import.none": "No hosts found in ~/.ssh/config. Patterns such as Host * are not imported.",
+  "import.count": "{count} hosts in the config",
+  "import.selectAll": "Select all",
+  "import.selectNone": "Select none",
+  "import.proxied": "via ProxyJump",
+  "import.alreadySaved": "already saved",
+  "import.tooMany": "At most {max} servers can be saved. Select fewer hosts.",
+  "import.submit": "Import {count}",
+  "notice.serversImported": "{count} servers imported.",
   "server.save": "Save server",
 
   // Common
@@ -295,6 +314,7 @@ const en = {
   "settings.cursor": "Cursor",
   "settings.selection": "Selection",
   "settings.tabColor": "Tab color",
+  "settings.hideTabColor": "No color",
   "settings.promptColor": "Shell prompt",
   "settings.promptColorHint": "Colors user@host in the usual shell prompt (Debian, Ubuntu). Other green output (e.g. git, ls) takes this color too.",
   "settings.promptColorAutomatic": "Back to the automatic color",
@@ -515,6 +535,8 @@ const de: Record<MessageKey, string> = {
   "topbar.settings": "Einstellungen",
 
   "tabs.label": "Terminal-Tabs",
+  "tabs.scrollLeft": "{count} weitere Tabs links",
+  "tabs.scrollRight": "{count} weitere Tabs rechts",
   "tabs.localShell": "Lokale Shell",
   "tabs.close": "{name} schließen",
   "tabs.closeTitle": "Tab schließen",
@@ -524,6 +546,7 @@ const de: Record<MessageKey, string> = {
   "tabMenu.rename": "Umbenennen",
   "tabMenu.color": "Tab-Farbe",
   "tabMenu.colorDefault": "Farbe des Designs",
+  "tabMenu.colorNone": "Keine Farbe",
   "tabMenu.colorCustom": "Eigene Farbe",
   "tabMenu.close": "Tab schließen",
   "tabs.openLocalTitle": "Lokale Shell",
@@ -607,6 +630,21 @@ const de: Record<MessageKey, string> = {
   "server.testTitle": "Prüft, ob der Server erreichbar ist und ein SSH-Server antwortet. Ohne Anmeldung, ohne Passwort.",
   "server.testRunning": "Wird getestet …",
   "server.testOk": "Erreichbar: {address} · {banner} · {millis} ms",
+
+  "sidebar.importSshConfig": "Aus ~/.ssh/config importieren",
+  "import.title": "Aus ~/.ssh/config importieren",
+  "import.close": "Import schließen",
+  "import.intro": "Jeder gewählte Host wird nur mit seinem Alias gespeichert. Hostname, Benutzer, Port, Schlüssel und ProxyJump liest OpenSSH weiterhin aus der Config, spätere Änderungen dort gelten also weiter.",
+  "import.loading": "~/.ssh/config wird gelesen …",
+  "import.none": "In ~/.ssh/config wurden keine Hosts gefunden. Muster wie Host * werden nicht übernommen.",
+  "import.count": "{count} Hosts in der Config",
+  "import.selectAll": "Alle auswählen",
+  "import.selectNone": "Keine auswählen",
+  "import.proxied": "über ProxyJump",
+  "import.alreadySaved": "bereits gespeichert",
+  "import.tooMany": "Es können höchstens {max} Server gespeichert werden. Wähle weniger Hosts.",
+  "import.submit": "{count} importieren",
+  "notice.serversImported": "{count} Server importiert.",
   "server.save": "Server speichern",
 
   "common.cancel": "Abbrechen",
@@ -739,6 +777,7 @@ const de: Record<MessageKey, string> = {
   "settings.cursor": "Cursor",
   "settings.selection": "Markierung",
   "settings.tabColor": "Tab-Farbe",
+  "settings.hideTabColor": "Keine Farbe",
   "settings.promptColor": "Shell-Prompt",
   "settings.promptColorHint": "Färbt user@host im üblichen Shell-Prompt (Debian, Ubuntu). Auch andere grüne Ausgaben (z. B. git, ls) nehmen diese Farbe an.",
   "settings.promptColorAutomatic": "Zurück zur automatischen Farbe",
@@ -986,6 +1025,7 @@ const backendMessages: Partial<Record<Language, Record<string, string>>> = {
     "Invalid font name": "Ungültiger Schriftname",
     "The sidebar width is outside the supported range": "Die Breite der Serverleiste liegt außerhalb des erlaubten Bereichs",
     "This link cannot be opened": "Dieser Link kann nicht geöffnet werden",
+    "Could not read ~/.ssh/config": "~/.ssh/config konnte nicht gelesen werden",
   },
 };
 

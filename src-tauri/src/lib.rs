@@ -5,6 +5,7 @@ mod fonts;
 mod session;
 mod sessions;
 mod snippets;
+mod sshconfig;
 mod storage;
 
 use sessions::AppState;
@@ -121,6 +122,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             system_locale,
             fonts::system_fonts,
             conntest::test_connection,
+            sshconfig::ssh_config_hosts,
             browser::open_in_browser,
             save_servers,
             save_settings,

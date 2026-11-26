@@ -9,6 +9,7 @@ import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
 import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabColorOf, titleOf, withShortcut } from "./labels";
 import { readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
 import ServerDialog from "./ServerDialog";
+import SshImportDialog from "./SshImportDialog";
 import { serverCategories, type ServerListProps } from "./ServerList";
 import ServerSidebar, { type ServerFilters } from "./ServerSidebar";
 import SettingsDialog from "./SettingsDialog";
@@ -29,6 +30,7 @@ import { useSnippets } from "./useSnippets";
 import { useUpdateCheck } from "./updates";
 import { reorderKeys } from "./useListDrag";
 import { useTabDrag } from "./useTabDrag";
+import { useTabOverflow } from "./useTabOverflow";
 import WelcomeGuide from "./WelcomeGuide";
 import "./styles.css";
 
@@ -44,6 +46,7 @@ export default function TabsApp() {
 
   /** Server dialog: undefined = closed, null = new server. */
   const [serverDialog, setServerDialog] = useState<SavedHost | null | undefined>(undefined);
+  const [importOpen, setImportOpen] = useState(false);
   const [sidebarNotice, setSidebarNotice] = useState("");
   const [serverFilters, setServerFilters] = useState<ServerFilters>({ category: null, query: "", collapsedGroups: new Set() });
   /** Snippet tag filter (lower case), null shows all. */
@@ -85,6 +88,9 @@ export default function TabsApp() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
   const canInsertSnippet = activeTab?.status === "connected";
   const tabDrag = useTabDrag(tabs, activeTabId, titleOf);
+  // Changes whenever the width of the tabs can change: added, closed, moved, renamed, editing a name.
+  const tabLayoutKey = `${tabs.map((tab) => `${tab.id}:${titleOf(tab)}`).join("|")}|${renamingTabId ?? ""}`;
+  const tabOverflow = useTabOverflow(activeTabId, tabLayoutKey);
   const menuTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined;
   const tabName = (tabId: string | undefined) => {
     const tab = tabs.find((item) => item.id === tabId);
@@ -276,6 +282,18 @@ export default function TabsApp() {
     }
   }
 
+  /** Adds the servers picked in the ~/.ssh/config import; false when writing servers.json failed. */
+  async function importServers(servers: SavedHost[]): Promise<boolean> {
+    try {
+      await storeServers([...savedHosts, ...servers]);
+      setSidebarNotice(t("notice.serversImported", { count: servers.length }));
+      return true;
+    } catch (error) {
+      setStorageError(t("notice.saveServersFailed", { error: translateBackend(error) }));
+      return false;
+    }
+  }
+
   async function removeServer(id: string) {
     if (!usable) return;
     try {
@@ -413,13 +431,14 @@ export default function TabsApp() {
             notice={sidebarNotice}
             onAdd={() => openConnectDialog(false)}
             onEdit={openServerDialog}
+            onImport={() => { setSidebarNotice(""); setImportOpen(true); }}
             onFilters={setServerFilters}
             onHide={panels.toggleServers}
             // Only servers with their own design get a bar, in the design's tab color.
             categoryOrder={appSettings.categoryOrder}
             onMoveServer={moveServer}
             onReorderCategory={reorderCategory}
-            markerColor={(server) => appSettings.appearances.find((item) => item.id === server.appearanceId)?.tabColor ?? ""}
+            markerColor={(server) => { const design = appSettings.appearances.find((item) => item.id === server.appearanceId); return design && !design.hideTabColor ? design.tabColor : ""; }}
             onOpen={openServer}
             onRemove={removeServer}
             servers={savedHosts}
@@ -434,7 +453,12 @@ export default function TabsApp() {
       <main className="workspace">
         <div className="tabbar">
           <button aria-controls="server-sidebar" aria-label={serversLabel} aria-pressed={panels.showServers} className="tabbar-button" disabled={!usable} onClick={panels.toggleServers} title={serversLabel} type="button"><span aria-hidden="true">☰</span></button>
-          <div aria-label={t("tabs.label")} className="terminal-tabs" role="tablist">
+          {(tabOverflow.overflow.left > 0 || tabOverflow.overflow.right > 0) && (
+            <button aria-label={t("tabs.scrollLeft", { count: tabOverflow.overflow.left })} className="tabbar-button tab-scroll-button" disabled={tabOverflow.overflow.left === 0} onClick={() => tabOverflow.scrollToHidden("left")} title={t("tabs.scrollLeft", { count: tabOverflow.overflow.left })} type="button">
+              <span aria-hidden="true">‹</span>{tabOverflow.overflow.left > 0 && <span className="tab-scroll-count">{tabOverflow.overflow.left}</span>}
+            </button>
+          )}
+          <div aria-label={t("tabs.label")} className="terminal-tabs" ref={tabOverflow.stripRef} role="tablist">
             {tabs.map((tab) => (
               <div className={`terminal-tab${tab.id === activeTabId ? " terminal-tab-active" : ""}${tab.id === tabDrag.draggingTabId ? " terminal-tab-dragging" : ""}`} data-tab-id={tab.id} key={tab.id} onContextMenu={(event) => { event.preventDefault(); setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY }); }} style={{ "--tab-color": tabColorOf(tab), "--terminal-bg": tab.appearance.background, "--terminal-fg": tab.appearance.foreground } as CSSProperties}>
                 {renamingTabId === tab.id ? (
@@ -457,6 +481,11 @@ export default function TabsApp() {
               </div>
             ))}
           </div>
+          {(tabOverflow.overflow.left > 0 || tabOverflow.overflow.right > 0) && (
+            <button aria-label={t("tabs.scrollRight", { count: tabOverflow.overflow.right })} className="tabbar-button tab-scroll-button" disabled={tabOverflow.overflow.right === 0} onClick={() => tabOverflow.scrollToHidden("right")} title={t("tabs.scrollRight", { count: tabOverflow.overflow.right })} type="button">
+              {tabOverflow.overflow.right > 0 && <span className="tab-scroll-count">{tabOverflow.overflow.right}</span>}<span aria-hidden="true">›</span>
+            </button>
+          )}
           <button aria-haspopup="menu" aria-label={t("tabs.newTab")} className="tabbar-button add-tab-button" onClick={(event) => requestNewTab(event.currentTarget.getBoundingClientRect())} title={newTabLabel} type="button"><span aria-hidden="true">+</span></button>
           <div className="tabbar-actions">
             {activeTab && (["row", "column"] as const).map((direction) => {
@@ -552,6 +581,14 @@ export default function TabsApp() {
           onSave={async (server) => { await saveServer(server); }}
           server={serverDialog}
           {...serverDialogProps}
+        />
+      )}
+      {importOpen && (
+        <SshImportDialog
+          initialCategory={serverFilters.category?.trim() ?? ""}
+          onClose={() => setImportOpen(false)}
+          onImport={importServers}
+          servers={savedHosts}
         />
       )}
       {connectDialog && (

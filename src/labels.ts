@@ -1,5 +1,8 @@
 import { t } from "./i18n";
-import type { SavedHost, SessionStatus, TerminalPaneState, TerminalTab } from "./terminalTypes";
+import type { Appearance, SavedHost, SessionStatus, TerminalPaneState, TerminalTab } from "./terminalTypes";
+
+/** `customColor` of a tab that shows no color line. */
+export const NO_TAB_COLOR = "none";
 
 /** Display texts for tabs, panes and servers. */
 
@@ -23,7 +26,13 @@ export function titleOf(tab: TerminalTab): string {
 
 /** Accent color of a tab: the user's choice, otherwise the design's tab color. */
 export function tabColorOf(tab: TerminalTab): string {
-  return tab.customColor || tab.appearance.tabColor;
+  if (tab.customColor === NO_TAB_COLOR) return "transparent";
+  return tab.customColor || designTabColorOf(tab.appearance);
+}
+
+/** Tab color of a design, "transparent" when the design shows none. */
+export function designTabColorOf(appearance: Appearance): string {
+  return appearance.hideTabColor ? "transparent" : appearance.tabColor;
 }
 
 /** "user@host" plus ":port" when it is not the default. */

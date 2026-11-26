@@ -1,5 +1,6 @@
 import { Fragment, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { t } from "./i18n";
+import { NO_TAB_COLOR } from "./labels";
 import TerminalPane from "./TerminalPane";
 import { MAX_SPLIT_RATIO, MIN_SPLIT_RATIO, terminalStore } from "./terminalStore";
 import type { SessionStatus, TerminalPaneState, TerminalTab } from "./terminalTypes";
@@ -83,7 +84,8 @@ export default function SplitView({ tab, paneTitle, statusLabel }: SplitViewProp
             )}
             <div
               className={`terminal-pane-box${active ? " terminal-pane-active" : ""}`}
-              style={{ flex: `${index === 0 ? ratio : 1 - ratio} 1 0`, "--terminal-bg": pane.appearance.background, "--tab-color": tab.customColor || pane.appearance.tabColor } as CSSProperties}
+              style={{ flex: `${index === 0 ? ratio : 1 - ratio} 1 0`, "--terminal-bg": pane.appearance.background, // The active pane keeps its marker line even when the tab has no color.
+              "--tab-color": (tab.customColor !== NO_TAB_COLOR && tab.customColor) || pane.appearance.tabColor } as CSSProperties}
             >
               {split && (
                 // Small bar in the corner, only visible while hovering the pane.

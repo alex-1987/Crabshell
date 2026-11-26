@@ -1,5 +1,6 @@
 import ColorField from "./ColorField";
 import { t } from "./i18n";
+import { designTabColorOf, NO_TAB_COLOR } from "./labels";
 import type { TerminalTab } from "./terminalTypes";
 import { useFloatingMenu } from "./useFloatingMenu";
 
@@ -22,7 +23,7 @@ type TabMenuProps = {
 export default function TabMenu({ tab, x, y, onRename, onSession, onColor, onCloseTab, onClose }: TabMenuProps) {
   // Arrow keys move between the menu entries, not into the color swatches.
   const { ref, position, handleMenuKey } = useFloatingMenu({ x, y, onClose, itemSelector: ".context-menu-item" });
-  const designColor = tab.appearance.tabColor;
+  const designColor = designTabColorOf(tab.appearance);
   const running = tab.status === "connected" || tab.status === "connecting";
   const local = tab.kind === "local";
   const sessionLabel = running ? (local ? t("topbar.stop") : t("topbar.disconnect")) : (local ? t("topbar.restart") : t("topbar.reconnect"));
@@ -43,12 +44,20 @@ export default function TabMenu({ tab, x, y, onRename, onSession, onColor, onClo
           title={t("tabMenu.colorDefault")}
           type="button"
         />
+        <button
+          aria-label={t("tabMenu.colorNone")}
+          aria-pressed={tab.customColor === NO_TAB_COLOR}
+          className="tab-menu-swatch swatch-none"
+          onClick={() => onColor(NO_TAB_COLOR)}
+          title={t("tabMenu.colorNone")}
+          type="button"
+        />
         {TAB_COLORS.map((color) => (
           <button aria-label={color} aria-pressed={tab.customColor === color} className="tab-menu-swatch" key={color} onClick={() => onColor(color)} style={{ background: color }} title={color} type="button" />
         ))}
       </div>
       <div className="tab-menu-custom">
-        <ColorField label={t("tabMenu.colorCustom")} onChange={onColor} value={tab.customColor || designColor} />
+        <ColorField label={t("tabMenu.colorCustom")} onChange={onColor} value={tab.customColor && tab.customColor !== NO_TAB_COLOR ? tab.customColor : tab.appearance.tabColor} />
       </div>
 
       <button className="context-menu-item context-menu-separated" onClick={onCloseTab} role="menuitem" type="button">{t("tabMenu.close")}</button>

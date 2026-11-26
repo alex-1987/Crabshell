@@ -6,6 +6,7 @@ import UpdateCheckButton from "./UpdateCheckButton";
 import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import ShortcutList from "./ShortcutList";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE, pathColorOf, promptColorOf } from "./appearance";
+import { designTabColorOf } from "./labels";
 import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
 import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
 import { themeModeCycle, themeModeLabel, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
@@ -32,12 +33,11 @@ const sections: { id: Section; label: MessageKey }[] = [
   { id: "appearances", label: "settings.designs" },
 ];
 
-const colorFields: { key: keyof Pick<Appearance, "foreground" | "background" | "cursor" | "selection" | "tabColor">; label: MessageKey }[] = [
+const colorFields: { key: keyof Pick<Appearance, "foreground" | "background" | "cursor" | "selection">; label: MessageKey }[] = [
   { key: "foreground", label: "settings.foreground" },
   { key: "background", label: "settings.background" },
   { key: "cursor", label: "settings.cursor" },
   { key: "selection", label: "settings.selection" },
-  { key: "tabColor", label: "settings.tabColor" },
 ];
 
 export default function SettingsDialog({ settings, servers, initialAppearanceId, systemLocale, onSave, onClose }: SettingsDialogProps) {
@@ -187,7 +187,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                 <div className="appearance-list">
                   {draft.appearances.map((item) => (
                     <button aria-pressed={item.id === selected.id} className="appearance-item" key={item.id} onClick={() => setSelectedId(item.id)} type="button">
-                      <span className="appearance-swatch" style={{ background: item.background, color: item.foreground, borderColor: item.tabColor }}>A</span>
+                      <span className="appearance-swatch" style={{ background: item.background, color: item.foreground, borderColor: designTabColorOf(item) }}>A</span>
                       <span className="appearance-item-name">{item.name || t("settings.unnamed")}</span>
                       {item.id === draft.defaultAppearanceId && <span className="appearance-badge">{t("settings.defaultBadge")}</span>}
                     </button>
@@ -204,6 +204,12 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                     {colorFields.map((field) => (
                       <ColorField key={field.key} label={t(field.label)} onChange={(value) => updateAppearance({ [field.key]: value })} value={selected[field.key]} />
                     ))}
+                    <ColorField
+                      label={t("settings.tabColor")}
+                      none={{ active: Boolean(selected.hideTabColor), label: t("settings.hideTabColor"), onSelect: () => updateAppearance({ hideTabColor: true }) }}
+                      onChange={(value) => updateAppearance({ tabColor: value, hideTabColor: false })}
+                      value={selected.tabColor}
+                    />
                     <div className="prompt-color-field">
                       <ColorField label={t("settings.promptColor")} onChange={(value) => updateAppearance({ promptColor: value })} value={promptColor} />
                       <div className="form-footnote">{t("settings.promptColorHint")}</div>
@@ -214,7 +220,7 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                   <label className="field-label" htmlFor="appearance-font-size">{t("settings.fontSize")} <span>{selected.fontSize} px</span></label>
                   <input className="range-input" id="appearance-font-size" max={MAX_FONT_SIZE} min={MIN_FONT_SIZE} onChange={(event) => updateAppearance({ fontSize: Number(event.target.value) })} type="range" value={selected.fontSize} />
 
-                  <div className="appearance-preview" style={{ background: selected.background, color: selected.foreground, fontFamily: fontStack(draft.terminalFont, DEFAULT_TERMINAL_FONT), fontSize: `${selected.fontSize}px`, borderTopColor: selected.tabColor }}>
+                  <div className="appearance-preview" style={{ background: selected.background, color: selected.foreground, fontFamily: fontStack(draft.terminalFont, DEFAULT_TERMINAL_FONT), fontSize: `${selected.fontSize}px`, borderTopColor: designTabColorOf(selected) }}>
                     <div><span style={{ color: promptColor }}>admin@server</span>:<span style={{ color: pathColor }}>~</span>$ ls -la</div>
                     <div><span style={{ background: `${selected.selection}88` }}>{t("settings.previewSelected")}</span> {t("settings.previewNormal")}</div>
                     <div><span style={{ color: promptColor }}>admin@server</span>:<span style={{ color: pathColor }}>~</span>$ <span className="appearance-preview-cursor" style={{ background: selected.cursor }} /></div>

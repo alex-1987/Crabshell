@@ -23,7 +23,7 @@ Die SSH-Verbindung läuft über das **installierte OpenSSH** (`ssh`) als Unterpr
 ## Roadmap
 
 1. ✅ Ein Host: Verbindung per `ssh` über `portable-pty`, Ein- und Ausgabe, Resize, Disconnect, sauberer Lebenszyklus
-2. Host-Import aus `~/.ssh/config` (noch offen)
+2. ✅ Host-Import aus `~/.ssh/config`
 3. ✅ Tabs und Split-Panes (eine Session pro Pane)
 4. ✅ Snippets (einfügen, nicht automatisch senden)
 5. SFTP (später, noch nicht anfangen)

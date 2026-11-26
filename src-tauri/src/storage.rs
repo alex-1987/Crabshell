@@ -55,6 +55,9 @@ pub(crate) struct Appearance {
     /// Replaces ANSI green (user@host in standard prompts); empty keeps the automatic color.
     #[serde(default)]
     pub prompt_color: String,
+    /// Tabs of this design show no color line (`tab_color` is kept for switching it back on).
+    #[serde(default)]
+    pub hide_tab_color: bool,
 }
 
 impl Appearance {
@@ -69,6 +72,7 @@ impl Appearance {
             selection: "#65734b".to_string(),
             tab_color: "#c7e77a".to_string(),
             prompt_color: String::new(),
+            hide_tab_color: false,
         }
     }
 }
@@ -328,7 +332,8 @@ pub(crate) struct SessionTab {
     pub split_server_id: String,
     /// Name the user gave the tab; empty means the automatic title.
     pub title: String,
-    /// Tab color chosen by the user ("#rrggbb"); empty means the color of the design.
+    /// Tab color chosen by the user ("#rrggbb", or "none" for no color line); empty means the
+    /// color of the design.
     pub color: String,
 }
 
@@ -356,7 +361,7 @@ fn valid_session_tab(tab: &SessionTab) -> bool {
     };
     let title_ok = tab.title.chars().count() <= MAX_TAB_TITLE_CHARS
         && !tab.title.chars().any(char::is_control);
-    let color_ok = tab.color.is_empty() || is_hex_color(&tab.color);
+    let color_ok = tab.color.is_empty() || tab.color == "none" || is_hex_color(&tab.color);
     valid_session_pane(&tab.kind, &tab.server_id) && split_ok && title_ok && color_ok
 }
 
@@ -857,6 +862,7 @@ mod tests {
             old.prompt_color.is_empty(),
             "older files have no prompt color"
         );
+        assert!(!old.hide_tab_color, "older files show the tab color");
     }
 
     #[test]
@@ -958,6 +964,7 @@ mod tests {
         };
         assert!(super::valid_session_tab(&colored("")));
         assert!(super::valid_session_tab(&colored("#4f8fe8")));
+        assert!(super::valid_session_tab(&colored("none")));
         assert!(!super::valid_session_tab(&colored("blue")));
         assert!(!super::valid_session_tab(&colored("#4f8fe8ff")));
     }

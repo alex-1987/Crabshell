@@ -26,6 +26,8 @@ type ServerSidebarProps = {
   onFilters: (filters: ServerFilters) => void;
   onHide: () => void;
   onAdd: () => void;
+  /** Opens the import from ~/.ssh/config. */
+  onImport: () => void;
   onEdit: (server: SavedHost) => void;
   onOpen: (server: SavedHost) => void;
   onRemove: (id: string) => Promise<void>;
@@ -37,7 +39,7 @@ type ServerSidebarProps = {
 };
 
 /** Left-hand server list with search, categories and the OpenSSH note. */
-export default function ServerSidebar({ version, servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onEdit, onOpen, onRemove, markerColor, categoryOrder, onMoveServer, onReorderCategory }: ServerSidebarProps) {
+export default function ServerSidebar({ version, servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onImport, onEdit, onOpen, onRemove, markerColor, categoryOrder, onMoveServer, onReorderCategory }: ServerSidebarProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const usable = storageReady && !storageError;
   const hideLabel = withShortcut(t("sidebar.hide"), terminalStore.shortcutLabel("toggleSidebar"));
@@ -53,6 +55,7 @@ export default function ServerSidebar({ version, servers, storageReady, storageE
       <div className="server-list-heading">
         <div><h1>{t("sidebar.servers")}</h1><span>{servers.length}</span></div>
         <div className="sidebar-heading-actions">
+          <button aria-label={t("sidebar.importSshConfig")} className="icon-button" disabled={!usable} onClick={onImport} title={t("sidebar.importSshConfig")} type="button"><span aria-hidden="true">⤓</span></button>
           <button aria-label={t("sidebar.addServer")} className="icon-button" disabled={!usable} onClick={onAdd} title={t("sidebar.addServer")} type="button"><span aria-hidden="true">+</span></button>
           <button aria-label={hideLabel} className="icon-button" disabled={!storageReady} onClick={onHide} title={hideLabel} type="button"><span aria-hidden="true">‹</span></button>
         </div>
@@ -81,7 +84,12 @@ export default function ServerSidebar({ version, servers, storageReady, storageE
         </div>
       )}
       <nav aria-label={t("sidebar.savedServers")} className="saved-server-list">
-        {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : servers.length === 0 ? <div className="sidebar-empty">{t("sidebar.empty")}</div> : (
+        {!storageReady ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : storageError ? <div aria-live="polite" className="sidebar-storage-error">{storageError}</div> : servers.length === 0 ? (
+          <div className="sidebar-empty">
+            {t("sidebar.empty")}
+            <button className="text-action sidebar-empty-action" onClick={onImport} type="button">{t("sidebar.importSshConfig")}</button>
+          </div>
+        ) : (
           <ServerList
             activeCategory={filters.category}
             address={serverAddress}

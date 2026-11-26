@@ -5,7 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
 import { t, translateBackend } from "./i18n";
 import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
-import { serverAddress } from "./labels";
+import { NO_TAB_COLOR, serverAddress } from "./labels";
 import { decodeOsc52, encodeOsc52 } from "./osc52";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
@@ -504,9 +504,9 @@ class TerminalStore {
     this.patchTab(tabId, { customTitle });
   }
 
-  /** Own color for a tab ("#rrggbb"); an empty value goes back to the design's tab color. */
+  /** Own color for a tab ("#rrggbb" or "none"); an empty value goes back to the design's tab color. */
   setTabColor(tabId: string, color: string): void {
-    this.patchTab(tabId, { customColor: /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "" });
+    this.patchTab(tabId, { customColor: color === NO_TAB_COLOR ? NO_TAB_COLOR : /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "" });
   }
 
   /** Tab-level fields only (name, color); pane fields go through updatePane. */
