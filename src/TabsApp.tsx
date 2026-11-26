@@ -7,8 +7,9 @@ import { defaultSettings } from "./appearance";
 import { ClipboardReadDialog, CloseConfirmDialog, PasteConfirmDialog } from "./ConfirmDialogs";
 import { resolveLanguage, setLanguage, t, translateBackend } from "./i18n";
 import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabColorOf, titleOf, withShortcut } from "./labels";
-import { clearLegacyStorage, loadLegacyServers, loadLegacySettings, readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
+import { readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
 import ServerDialog from "./ServerDialog";
+import { serverCategories, type ServerListProps } from "./ServerList";
 import ServerSidebar, { type ServerFilters } from "./ServerSidebar";
 import SettingsDialog from "./SettingsDialog";
 import SnippetEditor from "./SnippetEditor";
@@ -26,6 +27,7 @@ import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { usePanelLayout } from "./usePanelLayout";
 import { useSnippets } from "./useSnippets";
 import { useUpdateCheck } from "./updates";
+import { reorderKeys } from "./useListDrag";
 import { useTabDrag } from "./useTabDrag";
 import WelcomeGuide from "./WelcomeGuide";
 import "./styles.css";
@@ -94,14 +96,15 @@ export default function TabsApp() {
     void invoke<string | null>("system_locale").then(setSystemLocale).catch(() => undefined);
   }, []);
 
-  // Load servers, settings and the last session; migrate data from old localStorage versions.
+  // Load servers, settings and the last session; a first start writes both files.
   useEffect(() => {
     let mounted = true;
     void (async () => {
       try {
         const data = await invoke<PersistentData>("load_persistent_data");
-        const servers = data.serversFileExists ? data.servers : loadLegacyServers();
-        const settings = data.settingsFileExists ? data.settings : loadLegacySettings();
+        const servers = data.servers;
+        // New installations get the starter designs, which the backend default does not contain.
+        const settings = data.settingsFileExists ? data.settings : defaultSettings;
         if (!data.serversFileExists) await invoke("save_servers", { servers });
         if (!data.settingsFileExists) await invoke("save_settings", { settings });
         if (!mounted) return;
@@ -109,7 +112,6 @@ export default function TabsApp() {
         setSavedHosts(servers);
         panels.load(settings);
         applySettings(settings);
-        clearLegacyStorage();
         setStorageError("");
         if (data.recoveredFiles.length > 0) {
           setSidebarNotice(t("notice.filesRecovered", { files: data.recoveredFiles.map((file) => `${file}.broken`).join(", ") }));
@@ -284,6 +286,43 @@ export default function TabsApp() {
     }
   }
 
+  /** Drag and drop in the server list: new position, and the category of the group it was dropped in. */
+  const moveServer: ServerListProps["onMoveServer"] = (id, target) => {
+    const source = savedHosts.find((server) => server.id === id);
+    if (!source || !usable) return;
+    const rest = savedHosts.filter((server) => server.id !== id);
+    let category: string;
+    let index: number;
+    if ("category" in target) {
+      // Dropped on a group heading: at the end of that group.
+      category = target.category;
+      index = rest.length;
+      for (let position = rest.length - 1; position >= 0; position -= 1) {
+        if (rest[position].category === category) {
+          index = position + 1;
+          break;
+        }
+      }
+    } else {
+      const reference = rest.find((server) => server.id === target.serverId);
+      if (!reference) return;
+      category = reference.category;
+      index = rest.indexOf(reference) + (target.after ? 1 : 0);
+    }
+    const next = [...rest.slice(0, index), { ...source, category }, ...rest.slice(index)];
+    storeServers(next).catch((error: unknown) => setStorageError(t("notice.saveServersFailed", { error: translateBackend(error) })));
+  };
+
+  function reorderCategory(source: string, target: string, after: boolean) {
+    const keys = serverCategories(savedHosts, settingsRef.current.categoryOrder);
+    persistSettings({ ...settingsRef.current, categoryOrder: reorderKeys(keys, source, target, after) });
+  }
+
+  function reorderTag(source: string, target: string, after: boolean) {
+    const keys = snippetTags(snippets.snippets, settingsRef.current.tagOrder).map((tag) => tag.key);
+    persistSettings({ ...settingsRef.current, tagOrder: reorderKeys(keys, source, target, after) });
+  }
+
   function openServer(server: SavedHost) {
     if (usable) terminalStore.openServer(server);
   }
@@ -351,6 +390,13 @@ export default function TabsApp() {
     setWelcomeHidden(hidden);
   }
 
+  const serverDialogProps = {
+    onEditDesigns: (appearanceId: string) => setSettingsOpen({ appearanceId: appearanceId || appSettings.defaultAppearanceId }),
+    servers: savedHosts,
+    settings: appSettings,
+    storageError,
+  };
+
   const themeIcon = appSettings.themeMode === "system" ? "◐" : appSettings.themeMode === "light" ? "☀" : "☾";
   const serversLabel = withShortcut(panels.showServers ? t("sidebar.hide") : t("sidebar.show"), terminalStore.shortcutLabel("toggleSidebar"));
   const newTabLabel = [withShortcut(t("tabs.newTab"), terminalStore.shortcutLabel("newTab")), withShortcut(t("tabs.openLocalTitle"), terminalStore.shortcutLabel("localShell"))].join("\n");
@@ -369,6 +415,11 @@ export default function TabsApp() {
             onEdit={openServerDialog}
             onFilters={setServerFilters}
             onHide={panels.toggleServers}
+            // Only servers with their own design get a bar, in the design's tab color.
+            categoryOrder={appSettings.categoryOrder}
+            onMoveServer={moveServer}
+            onReorderCategory={reorderCategory}
+            markerColor={(server) => appSettings.appearances.find((item) => item.id === server.appearanceId)?.tabColor ?? ""}
             onOpen={openServer}
             onRemove={removeServer}
             servers={savedHosts}
@@ -469,6 +520,9 @@ export default function TabsApp() {
             onEdit={snippets.edit}
             onHide={panels.toggleSnippets}
             onInsert={insertSnippet}
+            onMove={snippets.move}
+            onReorderTag={reorderTag}
+            tagOrder={appSettings.tagOrder}
             onOpenPicker={() => setPickerOpen(true)}
             onTagFilter={setTagFilter}
             ready={snippets.ready}
@@ -495,12 +549,9 @@ export default function TabsApp() {
         <ServerDialog
           initialCategory={serverFilters.category?.trim() ?? ""}
           onClose={() => setServerDialog(undefined)}
-          onEditDesigns={(appearanceId) => setSettingsOpen({ appearanceId: appearanceId || appSettings.defaultAppearanceId })}
           onSave={async (server) => { await saveServer(server); }}
           server={serverDialog}
-          servers={savedHosts}
-          settings={appSettings}
-          storageError={storageError}
+          {...serverDialogProps}
         />
       )}
       {connectDialog && (
@@ -512,7 +563,6 @@ export default function TabsApp() {
             setConnectDialog(null);
             terminalStore.openServer(server);
           }}
-          onEditDesigns={(appearanceId) => setSettingsOpen({ appearanceId: appearanceId || appSettings.defaultAppearanceId })}
           onSave={async (server) => {
             if (!(await saveServer(server))) return;
             setConnectDialog(null);
@@ -520,9 +570,7 @@ export default function TabsApp() {
           }}
           saveConnects={connectDialog.saveConnects}
           server={null}
-          servers={savedHosts}
-          settings={appSettings}
-          storageError={storageError}
+          {...serverDialogProps}
         />
       )}
       {terminalSnapshot.pendingClipboardRead && (
@@ -586,7 +634,7 @@ export default function TabsApp() {
           snippets={snippets.snippets}
         />
       )}
-      {snippets.editing && <SnippetEditor existingTags={snippetTags(snippets.snippets)} onClose={snippets.closeEditor} onSave={snippets.store} snippet={snippets.editing} />}
+      {snippets.editing && <SnippetEditor existingTags={snippetTags(snippets.snippets, appSettings.tagOrder)} onClose={snippets.closeEditor} onSave={snippets.store} snippet={snippets.editing} />}
       {/* Rendered last so it stacks above the server dialog when opened from there. */}
       {settingsOpen && (
         <SettingsDialog initialAppearanceId={settingsOpen.appearanceId} onClose={() => setSettingsOpen(null)} onSave={saveSettingsDialog} servers={savedHosts} settings={appSettings} systemLocale={systemLocale} />

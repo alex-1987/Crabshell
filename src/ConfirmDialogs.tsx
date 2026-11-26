@@ -4,7 +4,7 @@ import { t } from "./i18n";
 import type { PendingPaste } from "./terminalTypes";
 
 /** "Don't ask again" choice of the paste dialog. */
-export type PasteRemember = "session" | "never" | null;
+type PasteRemember = "session" | "never" | null;
 
 /** Multi-line paste or snippet insert waiting for confirmation. Enter pastes. */
 export function PasteConfirmDialog({ paste, targetName, onConfirm, onCancel }: {

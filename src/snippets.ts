@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { byOrder } from "./useListDrag";
 
 /** Same limit as the backend (well below the 64 KiB terminal write limit). */
 export const MAX_SNIPPET_BYTES = 32 * 1024;
@@ -24,6 +25,11 @@ export function deleteSnippet(id: string): Promise<Snippet[]> {
   return invoke<Snippet[]>("snippets_delete", { id });
 }
 
+/** Saves a new order (all snippet ids); returns the stored list. */
+export function reorderSnippets(ids: string[]): Promise<Snippet[]> {
+  return invoke<Snippet[]>("snippets_reorder", { ids });
+}
+
 /** Snippets are pasted without trailing line breaks; anything left with a break is multiline. */
 export function isMultilineSnippet(text: string): boolean {
   return /[\r\n]/.test(text.replace(/[\r\n]+$/, ""));
@@ -38,8 +44,11 @@ export function parseTags(value: string): string[] {
   return tags;
 }
 
-/** All tags with their use count: compared case-insensitively, the first spelling wins. */
-export function snippetTags(snippets: Snippet[]) {
+/**
+ * All tags with their use count: compared case-insensitively, the first spelling wins.
+ * Sorted by `order` (lower-case keys, set by dragging the chips), the rest alphabetically.
+ */
+export function snippetTags(snippets: Snippet[], order: readonly string[] = []) {
   const tags = new Map<string, { key: string; label: string; count: number }>();
   for (const snippet of snippets) {
     for (const tag of new Set(snippet.tags.map((item) => item.toLowerCase()))) {
@@ -49,7 +58,7 @@ export function snippetTags(snippets: Snippet[]) {
       tags.set(tag, entry);
     }
   }
-  return [...tags.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  return byOrder([...tags.values()], (tag) => tag.key, order, (a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
 }
 
 /** Every search word must match the name, a tag or the text (case-insensitive). Names rank first. */

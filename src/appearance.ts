@@ -14,6 +14,7 @@ export const builtinAppearance: Appearance = {
   cursor: "#c7e77a",
   selection: "#65734b",
   tabColor: "#c7e77a",
+  promptColor: "",
 };
 
 /**
@@ -21,10 +22,10 @@ export const builtinAppearance: Appearance = {
  * file; existing installations keep their designs, and all of these can be edited or deleted.
  */
 const starterAppearances: Appearance[] = [
-  { id: "midnight", name: "Midnight", fontSize: 13, foreground: "#d4dbe6", background: "#0f1520", cursor: "#7fb4ff", selection: "#2f4a73", tabColor: "#7fb4ff" },
-  { id: "ember", name: "Ember", fontSize: 13, foreground: "#e8dccf", background: "#1a1412", cursor: "#f0a35e", selection: "#6b4a33", tabColor: "#f0a35e" },
-  { id: "paper", name: "Paper", fontSize: 13, foreground: "#2b2a26", background: "#faf8f3", cursor: "#5d8a1c", selection: "#b9d38a", tabColor: "#5d8a1c" },
-  { id: "daylight", name: "Daylight", fontSize: 13, foreground: "#1f2a37", background: "#f2f6fb", cursor: "#2f6fd0", selection: "#a9c6ef", tabColor: "#2f6fd0" },
+  { id: "midnight", name: "Midnight", fontSize: 13, foreground: "#d4dbe6", background: "#0f1520", cursor: "#7fb4ff", selection: "#2f4a73", tabColor: "#7fb4ff", promptColor: "" },
+  { id: "ember", name: "Ember", fontSize: 13, foreground: "#e8dccf", background: "#1a1412", cursor: "#f0a35e", selection: "#6b4a33", tabColor: "#f0a35e", promptColor: "" },
+  { id: "paper", name: "Paper", fontSize: 13, foreground: "#2b2a26", background: "#faf8f3", cursor: "#5d8a1c", selection: "#b9d38a", tabColor: "#5d8a1c", promptColor: "" },
+  { id: "daylight", name: "Daylight", fontSize: 13, foreground: "#1f2a37", background: "#f2f6fb", cursor: "#2f6fd0", selection: "#a9c6ef", tabColor: "#2f6fd0", promptColor: "" },
 ];
 
 export const defaultSettings: AppSettings = {
@@ -52,6 +53,8 @@ export const defaultSettings: AppSettings = {
   uiScale: 100,
   uiFont: "",
   terminalFont: "",
+  categoryOrder: [],
+  tagOrder: [],
 };
 
 /** ANSI palette of dark designs; designs override the base colors. */
@@ -107,13 +110,28 @@ function luminance(hex: string): number {
 }
 
 /** A design with a light background gets the light ANSI palette. */
-export function isLightAppearance(appearance: Appearance): boolean {
+function isLightAppearance(appearance: Appearance): boolean {
   return /^#[0-9a-f]{6}$/i.test(appearance.background) && luminance(appearance.background) > 0.4;
+}
+
+function automaticPalette(appearance: Appearance): ITheme {
+  return isLightAppearance(appearance) ? lightAnsiPalette : darkAnsiPalette;
+}
+
+/** The prompt color a design shows: its own, or the automatic ANSI green. */
+export function promptColorOf(appearance: Appearance): string {
+  return appearance.promptColor || automaticPalette(appearance).green || appearance.foreground;
+}
+
+/** ANSI blue of a design, for the path in the preview prompt. */
+export function pathColorOf(appearance: Appearance): string {
+  return automaticPalette(appearance).blue || appearance.foreground;
 }
 
 export function terminalTheme(appearance: Appearance): ITheme {
   return {
-    ...(isLightAppearance(appearance) ? lightAnsiPalette : darkAnsiPalette),
+    ...automaticPalette(appearance),
+    ...(appearance.promptColor ? { green: appearance.promptColor, brightGreen: appearance.promptColor } : {}),
     foreground: appearance.foreground,
     background: appearance.background,
     cursor: appearance.cursor,

@@ -75,6 +75,15 @@ fn snippets_delete(
     store.delete(&snippets_path(&app)?, &id)
 }
 
+#[tauri::command]
+fn snippets_reorder(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, snippets::SnippetStore>,
+    ids: Vec<String>,
+) -> Result<Vec<snippets::Snippet>, String> {
+    store.reorder(&snippets_path(&app)?, &ids)
+}
+
 /// The user's message locale, following the POSIX lookup order
 /// (LANGUAGE, LC_ALL, LC_MESSAGES, LANG). Returns None for unset or "C"/"POSIX".
 #[tauri::command]
@@ -118,6 +127,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             snippets_list,
             snippets_save,
             snippets_delete,
+            snippets_reorder,
             sessions::connect_host,
             sessions::open_local_shell,
             sessions::write_to_session,

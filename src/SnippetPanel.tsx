@@ -22,13 +22,17 @@ type SnippetPanelProps = {
   onDuplicate: (snippet: Snippet) => void;
   onDelete: (snippet: Snippet) => void;
   onInsert: (snippet: Snippet, execute: boolean) => void;
+  onMove: (source: string, target: string, after: boolean) => void;
+  /** Tag order from the settings (lower-case keys). */
+  tagOrder: readonly string[];
+  onReorderTag: (source: string, target: string, after: boolean) => void;
 };
 
 /** Right-hand snippet panel. */
 export default function SnippetPanel(props: SnippetPanelProps) {
   const { snippets, ready, error, notice, tagFilter, onTagFilter } = props;
   const pickerLabel = withShortcut(t("snippets.openPicker"), terminalStore.shortcutLabel("snippets"));
-  const chips = snippetTags(snippets);
+  const chips = snippetTags(snippets, props.tagOrder);
   // A tag whose last snippet was deleted no longer filters.
   const activeTag = tagFilter !== null && chips.some((chip) => chip.key === tagFilter) ? tagFilter : null;
   const visible = activeTag === null ? snippets : snippets.filter((snippet) => snippet.tags.some((tag) => tag.toLowerCase() === activeTag));
@@ -44,7 +48,7 @@ export default function SnippetPanel(props: SnippetPanelProps) {
         </div>
       </div>
       {notice && <div aria-live="polite" className="page-notice">{notice}</div>}
-      {ready && !error && <FilterChips active={activeTag} chips={chips} label={t("snippets.tagFilter")} onChange={onTagFilter} />}
+      {ready && !error && <FilterChips active={activeTag} chips={chips} label={t("snippets.tagFilter")} onChange={onTagFilter} onReorder={props.onReorderTag} />}
       <nav aria-label={t("snippets.saved")} className="saved-server-list">
         {!ready ? <div className="sidebar-empty">{t("sidebar.loading")}</div> : error ? <div aria-live="polite" className="sidebar-storage-error">{error}</div> : (
           <SnippetSidebar
@@ -56,6 +60,7 @@ export default function SnippetPanel(props: SnippetPanelProps) {
             onDuplicate={props.onDuplicate}
             onEdit={props.onEdit}
             onInsert={props.onInsert}
+            onMove={props.onMove}
             onTag={onTagFilter}
             snippets={visible}
           />

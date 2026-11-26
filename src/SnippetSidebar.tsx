@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "./i18n";
 import { firstLine, isMultilineSnippet, type Snippet } from "./snippets";
+import { useListDrag } from "./useListDrag";
 
 type SnippetSidebarProps = {
   snippets: Snippet[];
@@ -15,11 +16,20 @@ type SnippetSidebarProps = {
   onEdit: (snippet: Snippet) => void;
   onDuplicate: (snippet: Snippet) => void;
   onDelete: (snippet: Snippet) => void;
+  /** Drag and drop: put snippet `source` before or after `target`. */
+  onMove: (source: string, target: string, after: boolean) => void;
 };
 
 /** Snippet management in the sidebar: click (or double-click, see settings; Enter always works) pastes, row actions run, edit, duplicate, delete. */
-export default function SnippetSidebar({ snippets, disabled, canInsert, doubleClick, activeTag, onTag, onInsert, onEdit, onDuplicate, onDelete }: SnippetSidebarProps) {
+export default function SnippetSidebar({ snippets, disabled, canInsert, doubleClick, activeTag, onTag, onInsert, onEdit, onDuplicate, onDelete, onMove }: SnippetSidebarProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const drag = useListDrag({
+    scope: "snippet",
+    axis: "y",
+    label: (id) => snippets.find((snippet) => snippet.id === id)?.name ?? id,
+    onDrop: onMove,
+    disabled,
+  });
 
   if (snippets.length === 0) return <div className="sidebar-empty">{t("snippets.empty")}</div>;
 
@@ -28,7 +38,7 @@ export default function SnippetSidebar({ snippets, disabled, canInsert, doubleCl
       {snippets.map((snippet) => {
         const lines = snippet.text.replace(/[\r\n]+$/, "").split(/\r\n|\r|\n/).length;
         return (
-          <div className="saved-server snippet-row" key={snippet.id}>
+          <div className={`saved-server snippet-row${drag.draggingKey === snippet.id ? " list-drag-source" : ""}`} key={snippet.id} {...drag.itemProps(snippet.id)}>
             <button className="saved-server-main" disabled={disabled || !canInsert} onClick={(event) => { if (!doubleClick || event.detail === 0) onInsert(snippet, false); }} onDoubleClick={() => { if (doubleClick) onInsert(snippet, false); }} title={t(doubleClick ? "snippets.insertDouble" : "snippets.insert", { name: snippet.name })} type="button">
               <span className="saved-server-name">{snippet.name}</span>
               <span className="saved-server-host">{firstLine(snippet.text)}</span>
@@ -60,6 +70,7 @@ export default function SnippetSidebar({ snippets, disabled, canInsert, doubleCl
           </div>
         );
       })}
+      {drag.overlay}
     </>
   );
 }

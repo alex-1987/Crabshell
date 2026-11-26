@@ -8,7 +8,7 @@ Crabshell ist ein lokaler SSH-Manager für den Desktop (Alternative zu Termius/T
 
 - Desktop-App: **Tauri 2**
 - Backend: **Rust** (Tokio)
-- Terminal im Frontend: **xterm.js** (+ fit- und webgl-Addon)
+- Terminal im Frontend: **xterm.js** (+ fit-Addon; bewusst kein WebGL-Addon, es zeichnete unter WebKitGTK fehlende oder verpixelte Glyphen)
 - Frontend: React + Vite + TypeScript (Paketnamen: `@xterm/xterm`, `@xterm/addon-fit`)
 - Zielplattform zuerst: Linux
 
@@ -18,17 +18,17 @@ Die SSH-Verbindung läuft über das **installierte OpenSSH** (`ssh`) als Unterpr
 
 - Kein `russh` und keine eigene SSH-Implementierung in dieser Phase.
 - `~/.ssh/config`, ssh-agent, `known_hosts`, ProxyJump und IdentityFile übernimmt OpenSSH. Baue davon nichts nach.
-- Kapsele Sessions hinter einem Trait (z. B. `SshSession` mit `connect`, `write`, `resize`, `close`), damit später eine zweite Implementierung möglich ist, ohne das Frontend zu ändern.
+- Sessions laufen hinter dem Trait `TerminalSession` (`write`, `resize`, `close`, in `session.rs`), damit später eine zweite Implementierung möglich ist, ohne das Frontend zu ändern.
 
-## Roadmap (strikt der Reihenfolge nach)
+## Roadmap
 
-1. Ein Host: Verbindung per `ssh` über `portable-pty`, Ein- und Ausgabe, Resize, Disconnect, sauberer Lebenszyklus
-2. Host-Import aus `~/.ssh/config`
-3. Tabs und Split-Panes (eine Session pro Pane)
-4. Snippets (einfügen, nicht automatisch senden)
+1. ✅ Ein Host: Verbindung per `ssh` über `portable-pty`, Ein- und Ausgabe, Resize, Disconnect, sauberer Lebenszyklus
+2. Host-Import aus `~/.ssh/config` (noch offen)
+3. ✅ Tabs und Split-Panes (eine Session pro Pane)
+4. ✅ Snippets (einfügen, nicht automatisch senden)
 5. SFTP (später, noch nicht anfangen)
 
-**Aktueller Schritt: 1.** Arbeite nur am aktuellen Schritt. Baue nichts aus späteren Schritten vor, es sei denn, ich bitte darum.
+Weitere Ideen stehen in `docs/IDEEN.md`. Baue neue Funktionen nur, wenn ich darum bitte.
 
 ## Regeln für den Rust-Code
 
@@ -45,7 +45,7 @@ Die SSH-Verbindung läuft über das **installierte OpenSSH** (`ssh`) als Unterpr
 
 - Terminal-Output und -Input gehen als **rohe Bytes** zwischen Rust und Frontend, nicht als JSON-Zahlenarray. Prüfe in der aktuellen Tauri-2-Doku, wie binäre Channel-Daten (z. B. `tauri::ipc::Channel` mit `InvokeResponseBody::Raw`) korrekt verwendet werden, und rate die API nicht.
 - Resize: xterm.js meldet `cols`/`rows` an das Backend, das Backend ruft `resize` auf der PTY auf. Teste das tatsächlich (z. B. mit `htop` oder `vim` im Terminal).
-- Der Host-Key-Dialog von OpenSSH („unbekannter Host") erscheint in Schritt 1 einfach im Terminal. Ein eigener Dialog kommt später.
+- Der Host-Key-Dialog von OpenSSH („unbekannter Host") erscheint im Terminal. Ein eigener Dialog ist nicht geplant, solange ich nicht darum bitte.
 
 ## Sicherheit
 
@@ -54,7 +54,7 @@ Die SSH-Verbindung läuft über das **installierte OpenSSH** (`ssh`) als Unterpr
 - Tauri-Capabilities und Permissions so eng wie möglich halten. Keine Shell- oder FS-Rechte freigeben, die nicht gebraucht werden.
 - Keine Secrets in Logs, Fehlermeldungen oder Events.
 
-## Snippets (ab Schritt 4)
+## Snippets
 
 - Snippets werden über `term.paste(text)` in das aktive Terminal **eingefügt**.
 - Hänge nie automatisch einen Zeilenumbruch an. „Einfügen und mit Enter senden" ist eine eigene, bewusste Aktion mit sichtbarer Vorschau.
@@ -76,11 +76,3 @@ npm run tauri build    # Release-Build
 cd src-tauri && cargo fmt && cargo clippy && cargo check
 cd src-tauri && cargo test
 ```
-
-## Fertig-Kriterien für Schritt 1
-
-- Ein gespeicherter Host lässt sich verbinden, im Terminal läuft eine funktionierende Shell
-- Eingabe, Ausgabe, Farben und Resize funktionieren (getestet mit `htop`/`vim`)
-- Disconnect und Fenster-Schließen beenden den `ssh`-Prozess sauber, es bleiben keine Zombie-Prozesse
-- Verbindungsfehler und Trennungen sind in der UI sichtbar
-- Der Host-Key-Ablauf läuft über OpenSSH im Terminal

@@ -4,7 +4,7 @@
  * Placeholders use `{name}` and are filled from the params object.
  */
 
-export type Language = "en" | "de";
+type Language = "en" | "de";
 export type LanguageSetting = "system" | Language;
 
 const en = {
@@ -295,6 +295,9 @@ const en = {
   "settings.cursor": "Cursor",
   "settings.selection": "Selection",
   "settings.tabColor": "Tab color",
+  "settings.promptColor": "Shell prompt",
+  "settings.promptColorHint": "Colors user@host in the usual shell prompt (Debian, Ubuntu). Other green output (e.g. git, ls) takes this color too.",
+  "settings.promptColorAutomatic": "Back to the automatic color",
   "settings.fontSize": "Font size",
   "settings.hexColor": "Hex colour",
   "settings.previewSelected": "selected text",
@@ -349,6 +352,7 @@ const en = {
   "split.detach": "Move {name} to its own tab",
   "split.detachTitle": "Move to its own tab",
   "drag.hint": "drag to reorder, or onto a terminal to split",
+  "drag.reorderHint": "Drag to reorder",
   "drag.left": "Place on the left",
   "drag.right": "Place on the right",
   "drag.top": "Place on top",
@@ -735,6 +739,9 @@ const de: Record<MessageKey, string> = {
   "settings.cursor": "Cursor",
   "settings.selection": "Markierung",
   "settings.tabColor": "Tab-Farbe",
+  "settings.promptColor": "Shell-Prompt",
+  "settings.promptColorHint": "Färbt user@host im üblichen Shell-Prompt (Debian, Ubuntu). Auch andere grüne Ausgaben (z. B. git, ls) nehmen diese Farbe an.",
+  "settings.promptColorAutomatic": "Zurück zur automatischen Farbe",
   "settings.fontSize": "Schriftgröße",
   "settings.hexColor": "Hex-Farbe",
   "settings.previewSelected": "markierter Text",
@@ -788,6 +795,7 @@ const de: Record<MessageKey, string> = {
   "split.detach": "{name} in eigenen Tab verschieben",
   "split.detachTitle": "In eigenen Tab verschieben",
   "drag.hint": "ziehen zum Verschieben oder auf ein Terminal zum Teilen",
+  "drag.reorderHint": "Ziehen zum Anordnen",
   "drag.left": "Links einfügen",
   "drag.right": "Rechts einfügen",
   "drag.top": "Oben einfügen",

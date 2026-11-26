@@ -21,6 +21,11 @@ export type Appearance = {
   cursor: string;
   selection: string;
   tabColor: string;
+  /**
+   * Color of the shell prompt: replaces ANSI green, which standard prompts (Debian, Ubuntu)
+   * use for user@host. Empty keeps the automatic color.
+   */
+  promptColor: string;
 };
 
 import type { LanguageSetting } from "./i18n";
@@ -32,7 +37,7 @@ export type ClipboardReadMode = "ask" | "always" | "never";
 export type ClickMode = "single" | "double";
 
 /** One tab of the last run (session.json); servers are referenced by id only. */
-export type SessionTab = {
+type SessionTab = {
   kind: TabKind;
   serverId: string;
   /** Second pane of a split tab; empty direction means not split. */
@@ -84,6 +89,10 @@ export type AppSettings = {
   uiFont: string;
   /** Font family for the terminals; "" = built-in default. */
   terminalFont: string;
+  /** Order of the server categories (sidebar groups and chips); missing ones follow alphabetically. */
+  categoryOrder: string[];
+  /** Order of the snippet tags (lower case); missing ones follow alphabetically. */
+  tagOrder: string[];
 };
 
 export type SessionStatus = "disconnected" | "connecting" | "connected" | "disconnecting" | "failed";

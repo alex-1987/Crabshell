@@ -201,6 +201,9 @@ Your data is not removed with the app. To delete it as well, remove `~/.config/d
 - Single or double click for opening servers and pasting snippets, set in Settings.
 - Light, dark or system color scheme, and interface size 80–150 %.
 - Per-server designs: text, background, cursor, selection and tab color, and font size, with a built-in color picker (hex input and quick colors).
+- Optional shell prompt color per design: replaces the terminal's green, which the usual prompt (Debian, Ubuntu) uses for `user@host`.
+- Servers with their own design show a bar in the design's tab color in the server list.
+- Drag and drop to arrange: servers (also into another category), categories (group headings or chips), snippets and snippet tags. The order is saved.
 - Fonts: pick the interface font and the terminal font from the fonts installed on your system (monospaced ones by default, Nerd Fonts included). `Ctrl+Plus` / `Ctrl+Minus` make the text of the current tab larger or smaller, `Ctrl+0` resets it.
 - English and German. The language follows the system locale by default.
 - Update notice: when a newer release is on GitHub, a dot appears on the ⓘ button, and ⓘ About shows "Version x.y.z available" with a link to the release page. Nothing is downloaded or installed automatically. The check is off until you turn it on: the welcome guide asks once, and ⚙ Settings → Updates has the switch and a "Check now" button. Hide the notice per version with ×.
@@ -386,7 +389,7 @@ git push origin v0.2.1
 | `src/TerminalTabPanel.tsx`, `src/SplitView.tsx`, `src/SplitMenu.tsx`, `src/useTabDrag.tsx` | Terminal area, split view, tab drag and drop |
 | `src/SettingsDialog.tsx`, `src/ShortcutList.tsx`, `src/ColorField.tsx` | Settings, shortcut editor, color picker |
 | `src/Dialog.tsx`, `src/ConfirmDialogs.tsx` | Shared dialog frame; paste, clipboard and close confirmations |
-| `src/usePanelLayout.ts`, `src/persistence.ts`, `src/labels.ts`, `src/osc52.ts` | Panel sizes, session/migration helpers, display texts, OSC 52 |
+| `src/usePanelLayout.ts`, `src/persistence.ts`, `src/labels.ts`, `src/osc52.ts` | Panel sizes, session helpers, display texts, OSC 52 |
 | `src-tauri/src/sessions.rs`, `src-tauri/src/session.rs` | Running sessions and their commands; PTY, `ssh` and shell startup |
 | `src-tauri/src/storage.rs`, `src-tauri/src/snippets.rs` | Validated JSON files in the config directory |
 | `src-tauri/src/desktop.rs` | AppImage menu entry and icons |

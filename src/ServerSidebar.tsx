@@ -2,7 +2,7 @@ import { useState } from "react";
 import BrandMark from "./BrandMark";
 import { t } from "./i18n";
 import { fileName, serverAddress, withShortcut } from "./labels";
-import ServerList from "./ServerList";
+import ServerList, { type ServerListProps } from "./ServerList";
 import { terminalStore } from "./terminalStore";
 import type { SavedHost } from "./terminalTypes";
 
@@ -29,10 +29,15 @@ type ServerSidebarProps = {
   onEdit: (server: SavedHost) => void;
   onOpen: (server: SavedHost) => void;
   onRemove: (id: string) => Promise<void>;
+  /** Color of the bar on the left of a server ("" for none). */
+  markerColor: (server: SavedHost) => string;
+  categoryOrder: readonly string[];
+  onMoveServer: ServerListProps["onMoveServer"];
+  onReorderCategory: ServerListProps["onReorderCategory"];
 };
 
 /** Left-hand server list with search, categories and the OpenSSH note. */
-export default function ServerSidebar({ version, servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onEdit, onOpen, onRemove }: ServerSidebarProps) {
+export default function ServerSidebar({ version, servers, storageReady, storageError, notice, filters, doubleClick, onFilters, onHide, onAdd, onEdit, onOpen, onRemove, markerColor, categoryOrder, onMoveServer, onReorderCategory }: ServerSidebarProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const usable = storageReady && !storageError;
   const hideLabel = withShortcut(t("sidebar.hide"), terminalStore.shortcutLabel("toggleSidebar"));
@@ -85,6 +90,10 @@ export default function ServerSidebar({ version, servers, storageReady, storageE
             disabled={!usable}
             doubleClick={doubleClick}
             keyName={fileName}
+            markerColor={markerColor}
+            categoryOrder={categoryOrder}
+            onMoveServer={onMoveServer}
+            onReorderCategory={onReorderCategory}
             onCategory={(category) => onFilters({ ...filters, category })}
             onConfirmDelete={setConfirmDeleteId}
             onEdit={onEdit}

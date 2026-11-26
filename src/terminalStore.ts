@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { builtinAppearance, resolveAppearance, terminalTheme } from "./appearance";
 import { t, translateBackend } from "./i18n";
 import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
+import { serverAddress } from "./labels";
 import { decodeOsc52, encodeOsc52 } from "./osc52";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
@@ -77,6 +78,11 @@ function withActivePane(tab: TerminalTab): TerminalTab {
     notice: active.notice,
     appearance: active.appearance,
   };
+}
+
+/** A new tab around one pane, without a custom name, color or zoom. */
+function newTab(id: string, pane: TerminalPaneState): TerminalTab {
+  return withActivePane({ ...pane, id, panes: [pane], split: null, splitRatio: 0.5, activePaneId: pane.id, customTitle: "", customColor: "", fontZoom: 0 });
 }
 
 class TerminalStore {
@@ -459,23 +465,7 @@ class TerminalStore {
   /** `server === null` creates a local shell tab. */
   private createTab(server: SavedHost | null): string {
     const id = crypto.randomUUID();
-    const pane = this.createPane(id, server);
-    this.tabs = [...this.tabs, withActivePane({
-      id,
-      panes: [pane],
-      split: null,
-      splitRatio: 0.5,
-      activePaneId: pane.id,
-      customTitle: "",
-      customColor: "",
-      fontZoom: 0,
-      kind: pane.kind,
-      title: pane.title,
-      server: pane.server,
-      status: pane.status,
-      notice: pane.notice,
-      appearance: pane.appearance,
-    })];
+    this.tabs = [...this.tabs, newTab(id, this.createPane(id, server))];
     this.activateTab(id);
     return id;
   }
@@ -563,10 +553,7 @@ class TerminalStore {
     const moved = source.panes[0];
     const runtime = this.runtimes.get(moved.id);
     if (!runtime || runtime.closing) return;
-    runtime.tabId = targetTabId;
-    if (this.pendingPaste?.paneId === moved.id) this.pendingPaste = { ...this.pendingPaste, tabId: targetTabId };
-    if (this.pendingClipboardRead?.paneId === moved.id) this.pendingClipboardRead = { ...this.pendingClipboardRead, tabId: targetTabId };
-    this.contextMenu = null;
+    this.retargetPane(moved.id, runtime, targetTabId);
     this.tabs = this.tabs
       .filter((tab) => tab.id !== sourceTabId)
       .map((tab) => tab.id === targetTabId
@@ -584,16 +571,20 @@ class TerminalStore {
     if (!tab || !runtime || tab.panes.length < 2) return;
     const pane = tab.panes.find((item) => item.id === paneId)!;
     const newTabId = crypto.randomUUID();
-    runtime.tabId = newTabId;
-    if (this.pendingPaste?.paneId === paneId) this.pendingPaste = { ...this.pendingPaste, tabId: newTabId };
-    if (this.pendingClipboardRead?.paneId === paneId) this.pendingClipboardRead = { ...this.pendingClipboardRead, tabId: newTabId };
-    this.contextMenu = null;
+    this.retargetPane(paneId, runtime, newTabId);
     const remaining = tab.panes.filter((item) => item.id !== paneId);
     const index = this.tabs.findIndex((item) => item.id === tab.id);
     const updated = withActivePane({ ...tab, panes: remaining, split: null, activePaneId: remaining[0].id });
-    const created = withActivePane({ ...updated, id: newTabId, panes: [pane], activePaneId: pane.id, splitRatio: 0.5, customTitle: "", customColor: "", fontZoom: 0 });
-    this.tabs = [...this.tabs.slice(0, index), updated, created, ...this.tabs.slice(index + 1)];
+    this.tabs = [...this.tabs.slice(0, index), updated, newTab(newTabId, pane), ...this.tabs.slice(index + 1)];
     this.activateTab(newTabId);
+  }
+
+  /** A pane moves to another tab (merge, detach): its runtime and open requests follow it. */
+  private retargetPane(paneId: string, runtime: PaneRuntime, tabId: string): void {
+    runtime.tabId = tabId;
+    if (this.pendingPaste?.paneId === paneId) this.pendingPaste = { ...this.pendingPaste, tabId };
+    if (this.pendingClipboardRead?.paneId === paneId) this.pendingClipboardRead = { ...this.pendingClipboardRead, tabId };
+    this.contextMenu = null;
   }
 
   /** Divider position; the ResizeObservers refit both panes. */
@@ -856,8 +847,7 @@ class TerminalStore {
     if (this.pendingClipboardRead?.paneId === paneId) this.pendingClipboardRead = null;
     runtime.terminal.reset();
     if (server) {
-      const address = server.port && server.port !== 22 ? `${server.host}:${server.port}` : server.host;
-      const target = server.label ? `${server.label} (${address})` : `${server.username ? `${server.username}@` : ""}${address}`;
+      const target = server.label ? `${server.label} (${serverAddress(server)})` : serverAddress(server);
       runtime.terminal.writeln(t("notice.connectingTo", { target }));
     }
     this.updatePane(paneId, { status: "connecting", notice: "" });

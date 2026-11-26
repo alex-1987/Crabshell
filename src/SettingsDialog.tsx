@@ -5,7 +5,7 @@ import FontSettings from "./FontSettings";
 import UpdateCheckButton from "./UpdateCheckButton";
 import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import ShortcutList from "./ShortcutList";
-import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE } from "./appearance";
+import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE, pathColorOf, promptColorOf } from "./appearance";
 import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
 import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
 import { themeModeCycle, themeModeLabel, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
@@ -48,6 +48,8 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
   const [error, setError] = useState("");
 
   const selected = draft.appearances.find((item) => item.id === selectedId) ?? draft.appearances[0];
+  const promptColor = promptColorOf(selected);
+  const pathColor = pathColorOf(selected);
   const nameInvalid = draft.appearances.some((item) => !item.name.trim());
 
   function updateAppearance(patch: Partial<Appearance>) {
@@ -167,15 +169,19 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
             {section === "appearances" && (
               <>
                 <div className="settings-panel settings-design-defaults">
-                  <label className="field-label" htmlFor="default-appearance">{t("settings.defaultDesign")}</label>
-                  <select id="default-appearance" onChange={(event) => setDraft({ ...draft, defaultAppearanceId: event.target.value })} value={draft.defaultAppearanceId}>
-                    {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
-                  </select>
-                  <label className="field-label" htmlFor="local-appearance">{t("settings.localDesign")}</label>
-                  <select id="local-appearance" onChange={(event) => setDraft({ ...draft, localAppearanceId: event.target.value })} value={draft.localAppearanceId}>
-                    <option value="">{t("settings.defaultDesignOption")}</option>
-                    {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
-                  </select>
+                  <div>
+                    <label className="field-label" htmlFor="default-appearance">{t("settings.defaultDesign")}</label>
+                    <select id="default-appearance" onChange={(event) => setDraft({ ...draft, defaultAppearanceId: event.target.value })} value={draft.defaultAppearanceId}>
+                      {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="local-appearance">{t("settings.localDesign")}</label>
+                    <select id="local-appearance" onChange={(event) => setDraft({ ...draft, localAppearanceId: event.target.value })} value={draft.localAppearanceId}>
+                      <option value="">{t("settings.defaultDesignOption")}</option>
+                      {draft.appearances.map((item) => <option key={item.id} value={item.id}>{item.name || t("settings.unnamed")}</option>)}
+                    </select>
+                  </div>
                 </div>
               <div className="settings-panel appearance-layout" role="tabpanel">
                 <div className="appearance-list">
@@ -198,15 +204,20 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                     {colorFields.map((field) => (
                       <ColorField key={field.key} label={t(field.label)} onChange={(value) => updateAppearance({ [field.key]: value })} value={selected[field.key]} />
                     ))}
+                    <div className="prompt-color-field">
+                      <ColorField label={t("settings.promptColor")} onChange={(value) => updateAppearance({ promptColor: value })} value={promptColor} />
+                      <div className="form-footnote">{t("settings.promptColorHint")}</div>
+                      <button className="button button-secondary prompt-color-reset" disabled={!selected.promptColor} onClick={() => updateAppearance({ promptColor: "" })} title={t("settings.promptColorAutomatic")} type="button">{t("settings.reset")}</button>
+                    </div>
                   </div>
 
                   <label className="field-label" htmlFor="appearance-font-size">{t("settings.fontSize")} <span>{selected.fontSize} px</span></label>
                   <input className="range-input" id="appearance-font-size" max={MAX_FONT_SIZE} min={MIN_FONT_SIZE} onChange={(event) => updateAppearance({ fontSize: Number(event.target.value) })} type="range" value={selected.fontSize} />
 
                   <div className="appearance-preview" style={{ background: selected.background, color: selected.foreground, fontFamily: fontStack(draft.terminalFont, DEFAULT_TERMINAL_FONT), fontSize: `${selected.fontSize}px`, borderTopColor: selected.tabColor }}>
-                    <div>admin@server:~$ ls -la</div>
+                    <div><span style={{ color: promptColor }}>admin@server</span>:<span style={{ color: pathColor }}>~</span>$ ls -la</div>
                     <div><span style={{ background: `${selected.selection}88` }}>{t("settings.previewSelected")}</span> {t("settings.previewNormal")}</div>
-                    <div>admin@server:~$ <span className="appearance-preview-cursor" style={{ background: selected.cursor }} /></div>
+                    <div><span style={{ color: promptColor }}>admin@server</span>:<span style={{ color: pathColor }}>~</span>$ <span className="appearance-preview-cursor" style={{ background: selected.cursor }} /></div>
                   </div>
 
                   <div className="form-footnote">

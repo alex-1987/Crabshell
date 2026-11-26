@@ -1,4 +1,3 @@
-import { defaultSettings } from "./appearance";
 import { terminalStore } from "./terminalStore";
 import type { AppSettings, SavedHost, SessionState, SplitTarget, TerminalPaneState, TerminalTab } from "./terminalTypes";
 
@@ -12,69 +11,6 @@ export type PersistentData = {
   /** Data files that were unreadable or had invalid entries; the original is kept as `<name>.broken`. */
   recoveredFiles: string[];
 };
-
-// Early versions kept servers and the sidebar layout in localStorage. They are migrated
-// to the config files once and then removed.
-const HOSTS_STORAGE_KEY = "crabshell.saved-hosts.v1";
-const LEGACY_HOST_STORAGE_KEY = "crabshell.saved-host.v1";
-const SIDEBAR_WIDTH_KEY = "crabshell.sidebar-width.v1";
-const SIDEBAR_COLLAPSED_KEY = "crabshell.sidebar-collapsed.v1";
-
-function normalizeSavedHost(value: unknown): SavedHost | null {
-  if (!value || typeof value !== "object") return null;
-  const saved = value as Partial<SavedHost>;
-  if (typeof saved.host !== "string" || !saved.host.trim()) return null;
-  return {
-    id: typeof saved.id === "string" && saved.id ? saved.id : crypto.randomUUID(),
-    label: typeof saved.label === "string" ? saved.label : "",
-    host: saved.host,
-    port: typeof saved.port === "number" && Number.isInteger(saved.port) && saved.port >= 1 && saved.port <= 65535 ? saved.port : 22,
-    username: typeof saved.username === "string" ? saved.username : "",
-    identityFile: typeof saved.identityFile === "string" ? saved.identityFile : "",
-    appearanceId: typeof saved.appearanceId === "string" ? saved.appearanceId : "",
-    category: typeof saved.category === "string" ? saved.category.trim().slice(0, 48) : "",
-  };
-}
-
-export function loadLegacyServers(): SavedHost[] {
-  try {
-    const stored = localStorage.getItem(HOSTS_STORAGE_KEY);
-    if (stored) {
-      const parsed: unknown = JSON.parse(stored);
-      return Array.isArray(parsed)
-        ? parsed.map(normalizeSavedHost).filter((server): server is SavedHost => server !== null)
-        : [];
-    }
-    const legacy = localStorage.getItem(LEGACY_HOST_STORAGE_KEY);
-    const server = legacy ? normalizeSavedHost(JSON.parse(legacy)) : null;
-    return server ? [server] : [];
-  } catch {
-    return [];
-  }
-}
-
-export function loadLegacySettings(): AppSettings {
-  try {
-    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-    return {
-      ...defaultSettings,
-      sidebarWidth: Number.isFinite(storedWidth) && storedWidth >= 180 && storedWidth <= 420
-        ? Math.round(storedWidth)
-        : 220,
-      sidebarCollapsed: localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
-    };
-  } catch {
-    return defaultSettings;
-  }
-}
-
-export function clearLegacyStorage(): void {
-  try {
-    for (const key of [HOSTS_STORAGE_KEY, LEGACY_HOST_STORAGE_KEY, SIDEBAR_WIDTH_KEY, SIDEBAR_COLLAPSED_KEY]) localStorage.removeItem(key);
-  } catch {
-    // Nothing to clean up without storage access.
-  }
-}
 
 /** Per-device UI convenience: the user hid the getting-started guide. */
 const WELCOME_HIDDEN_KEY = "crabshell.welcome-hidden.v1";

@@ -52,6 +52,9 @@ pub(crate) struct Appearance {
     pub cursor: String,
     pub selection: String,
     pub tab_color: String,
+    /// Replaces ANSI green (user@host in standard prompts); empty keeps the automatic color.
+    #[serde(default)]
+    pub prompt_color: String,
 }
 
 impl Appearance {
@@ -65,6 +68,7 @@ impl Appearance {
             cursor: "#c7e77a".to_string(),
             selection: "#65734b".to_string(),
             tab_color: "#c7e77a".to_string(),
+            prompt_color: String::new(),
         }
     }
 }
@@ -114,6 +118,10 @@ pub(crate) struct AppSettings {
     pub ui_font: String,
     /// Font family for the terminals; empty means the built-in default.
     pub terminal_font: String,
+    /// Order of the server categories; missing ones follow alphabetically.
+    pub category_order: Vec<String>,
+    /// Order of the snippet tags (lower case); missing ones follow alphabetically.
+    pub tag_order: Vec<String>,
 }
 
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
@@ -198,6 +206,8 @@ impl Default for AppSettings {
             ui_scale: 100,
             ui_font: String::new(),
             terminal_font: String::new(),
+            category_order: Vec::new(),
+            tag_order: Vec::new(),
         }
     }
 }
@@ -271,7 +281,39 @@ const SETTING_RULES: &[SettingRule] = &[
         },
         error: "Invalid font name",
     },
+    SettingRule {
+        valid: |settings| valid_order(&settings.category_order, MAX_CATEGORY_CHARS),
+        reset: |settings| normalize_order(&mut settings.category_order, MAX_CATEGORY_CHARS),
+        error: "Invalid category order",
+    },
+    SettingRule {
+        valid: |settings| valid_order(&settings.tag_order, crate::snippets::MAX_TAG_CHARS),
+        reset: |settings| normalize_order(&mut settings.tag_order, crate::snippets::MAX_TAG_CHARS),
+        error: "Invalid tag order",
+    },
 ];
+
+/// Sort orders hold names the user typed: trimmed, not empty, no control characters.
+const MAX_ORDER_ENTRIES: usize = 500;
+
+fn valid_order_entry(entry: &str, max_chars: usize) -> bool {
+    !entry.is_empty()
+        && entry.trim() == entry
+        && entry.chars().count() <= max_chars
+        && !entry.chars().any(char::is_control)
+}
+
+fn valid_order(order: &[String], max_chars: usize) -> bool {
+    order.len() <= MAX_ORDER_ENTRIES
+        && order
+            .iter()
+            .all(|entry| valid_order_entry(entry, max_chars))
+}
+
+fn normalize_order(order: &mut Vec<String>, max_chars: usize) {
+    order.retain(|entry| valid_order_entry(entry, max_chars));
+    order.truncate(MAX_ORDER_ENTRIES);
+}
 
 /// One tab of the last run: a local shell or a saved server (by id, never connection details).
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -457,6 +499,7 @@ fn valid_appearance(appearance: &Appearance) -> bool {
         && appearance.name.len() <= 64
         && (8..=32).contains(&appearance.font_size)
         && colors.iter().all(|color| is_hex_color(color))
+        && (appearance.prompt_color.is_empty() || is_hex_color(&appearance.prompt_color))
 }
 
 fn validate_appearances(settings: &AppSettings) -> Result<(), String> {
@@ -794,6 +837,43 @@ mod tests {
         );
         assert!(recovered.is_empty(), "a missing file is not a recovery");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prompt_color_is_empty_or_hex() {
+        let mut settings = AppSettings::default();
+        assert!(validate_appearances(&settings).is_ok(), "empty: automatic");
+        settings.appearances[0].prompt_color = "#e85d5d".to_string();
+        assert!(validate_appearances(&settings).is_ok());
+        settings.appearances[0].prompt_color = "green".to_string();
+        assert!(validate_appearances(&settings).is_err());
+
+        let old: Appearance = serde_json::from_str(
+            r##"{"id":"a","name":"A","fontSize":13,"foreground":"#ffffff","background":"#000000",
+                "cursor":"#ffffff","selection":"#333333","tabColor":"#ff0000"}"##,
+        )
+        .unwrap();
+        assert!(
+            old.prompt_color.is_empty(),
+            "older files have no prompt color"
+        );
+    }
+
+    #[test]
+    fn sort_orders_drop_invalid_entries() {
+        let mut settings: AppSettings = serde_json::from_str(
+            r#"{"categoryOrder":["Docker"," LXC","","Fire\nwall"],"tagOrder":["caddy"]}"#,
+        )
+        .unwrap();
+        assert!(SETTING_RULES.iter().any(|rule| !(rule.valid)(&settings)));
+        for rule in SETTING_RULES {
+            if !(rule.valid)(&settings) {
+                (rule.reset)(&mut settings);
+            }
+        }
+        assert_eq!(settings.category_order, ["Docker"]);
+        assert_eq!(settings.tag_order, ["caddy"]);
+        assert!(AppSettings::default().category_order.is_empty());
     }
 
     #[test]

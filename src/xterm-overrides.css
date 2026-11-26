@@ -1,3 +1,5 @@
 .xterm .xterm-viewport::-webkit-scrollbar { width: 8px; }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb { border: 2px solid var(--terminal-bg, var(--terminal)); border-radius: 6px; background: var(--border-strong); }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:active { background: var(--text-muted); }
 .xterm .xterm-viewport::-webkit-scrollbar-track { background: var(--terminal-bg, var(--terminal)); }

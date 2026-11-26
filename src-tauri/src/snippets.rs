@@ -16,7 +16,7 @@ const MAX_NAME_CHARS: usize = 128;
 /// Well below the 64 KiB limit of `write_to_session`, so a snippet always fits into one write.
 const MAX_TEXT_BYTES: usize = 32 * 1024;
 const MAX_TAGS: usize = 20;
-const MAX_TAG_CHARS: usize = 32;
+pub(crate) const MAX_TAG_CHARS: usize = 32;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -68,6 +68,24 @@ impl SnippetStore {
         let before = snippets.len();
         snippets.retain(|item| item.id != id);
         if snippets.len() != before {
+            write_json_atomic(path, &snippets)?;
+        }
+        Ok(snippets)
+    }
+
+    /// Puts the snippets in the order of `ids`; snippets missing there keep their order at the end.
+    pub(crate) fn reorder(&self, path: &Path, ids: &[String]) -> Result<Vec<Snippet>, String> {
+        let _guard = self.guard()?;
+        let mut snippets = load(path)?.snippets;
+        let rank = |snippet: &Snippet| {
+            ids.iter()
+                .position(|id| *id == snippet.id)
+                .unwrap_or(usize::MAX)
+        };
+        let before: Vec<String> = snippets.iter().map(|snippet| snippet.id.clone()).collect();
+        // Stable sort: unknown ids (rank MAX) keep their relative order.
+        snippets.sort_by_key(rank);
+        if snippets.iter().map(|snippet| &snippet.id).ne(before.iter()) {
             write_json_atomic(path, &snippets)?;
         }
         Ok(snippets)
@@ -179,6 +197,21 @@ mod tests {
             text: text.to_string(),
             tags: Vec::new(),
         }
+    }
+
+    #[test]
+    fn reorders_by_id_and_keeps_unknown_snippets_at_the_end() {
+        let path = test_dir().join("snippets.json");
+        let store = SnippetStore::default();
+        for (id, name) in [("a", "A"), ("b", "B"), ("c", "C")] {
+            store.save(&path, snippet(id, name, "uptime")).unwrap();
+        }
+        let ids = |list: &[Snippet]| list.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
+        let list = store
+            .reorder(&path, &["c".to_string(), "x".to_string(), "a".to_string()])
+            .unwrap();
+        assert_eq!(ids(&list), ["c", "a", "b"]);
+        assert_eq!(ids(&store.list(&path).unwrap().snippets), ["c", "a", "b"]);
     }
 
     #[test]

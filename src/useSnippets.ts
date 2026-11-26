@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { t, translateBackend } from "./i18n";
-import { deleteSnippet, listSnippets, saveSnippet, type Snippet } from "./snippets";
+import { deleteSnippet, listSnippets, reorderSnippets, saveSnippet, type Snippet } from "./snippets";
+import { reorderKeys } from "./useListDrag";
 
 /** Snippet list (snippets.json) with load/save/delete and the panel's notice and error lines. */
 export function useSnippets() {
@@ -54,10 +55,22 @@ export function useSnippets() {
       .catch(saveFailed);
   }
 
+  /** Drag and drop in the panel: shown right away, then stored. */
+  function move(sourceId: string, targetId: string, after: boolean) {
+    const ids = reorderKeys(snippets.map((snippet) => snippet.id), sourceId, targetId, after);
+    setSnippets(ids.map((id) => snippets.find((snippet) => snippet.id === id)).filter((snippet): snippet is Snippet => Boolean(snippet)));
+    reorderSnippets(ids)
+      .then((next) => {
+        setSnippets(next);
+        setError("");
+      })
+      .catch(saveFailed);
+  }
+
   function edit(snippet: Snippet | null) {
     setNotice("");
     setEditing(snippet);
   }
 
-  return { snippets, ready, error, notice, editing, store, duplicate, remove, edit, closeEditor: () => setEditing(null) };
+  return { snippets, ready, error, notice, editing, store, duplicate, remove, move, edit, closeEditor: () => setEditing(null) };
 }
