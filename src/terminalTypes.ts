@@ -10,6 +10,8 @@ export type SavedHost = {
   appearanceId: string;
   /** Sidebar group; empty string means no category. */
   category: string;
+  /** Connect through the proxy from the settings (only while it is switched on and filled in). */
+  useProxy: boolean;
 };
 
 export type Appearance = {
@@ -34,6 +36,7 @@ import type { LanguageSetting } from "./i18n";
 import type { Keybindings } from "./keybindings";
 
 export type ThemeMode = "system" | "light" | "dark";
+export type ProxyType = "socks5" | "http";
 export type ClipboardReadMode = "ask" | "always" | "never";
 /** Clicks needed to open a server or paste a snippet from the side panels. */
 export type ClickMode = "single" | "double";
@@ -95,6 +98,18 @@ export type AppSettings = {
   categoryOrder: string[];
   /** Order of the snippet tags (lower case); missing ones follow alphabetically. */
   tagOrder: string[];
+  /** Reconnect SSH sessions that lost their connection (after standby, network change …). */
+  autoReconnect: boolean;
+  /** Send SSH keepalives, so a connection that died silently (VPN cut) ends and can reconnect. */
+  keepaliveEnabled: boolean;
+  /** Seconds between keepalives (5–300); the connection ends after 3 unanswered ones. */
+  keepaliveSeconds: number;
+  /** Proxy for servers that use it; off means every connection is direct. */
+  proxyEnabled: boolean;
+  proxyType: ProxyType;
+  /** Empty until the user enters a proxy. */
+  proxyHost: string;
+  proxyPort: number;
 };
 
 export type SessionStatus = "disconnected" | "connecting" | "connected" | "disconnecting" | "failed";
@@ -102,7 +117,7 @@ export type SessionStatus = "disconnected" | "connecting" | "connected" | "disco
 export type SessionEvent =
   | { state: "connecting" }
   | { state: "connected" }
-  | { state: "disconnected"; message: string }
+  | { state: "disconnected"; message: string; exitCode?: number | null }
   | { state: "failed"; message: string };
 
 export type TabKind = "ssh" | "local";
@@ -121,6 +136,10 @@ export type TerminalPaneState = {
   server: SavedHost | null;
   status: SessionStatus;
   notice: string;
+  /** Time of the pending automatic reconnect (ms since epoch); 0 when none is pending. */
+  reconnectAt: number;
+  /** Number of that automatic attempt (1 = first). */
+  reconnectAttempt: number;
   appearance: Appearance;
 };
 

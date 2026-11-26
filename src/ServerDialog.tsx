@@ -5,11 +5,12 @@ import { useState, type FormEvent } from "react";
 import Dialog from "./Dialog";
 import { t, translateBackend } from "./i18n";
 import { fileName } from "./labels";
+import { activeProxy, proxyLabel } from "./proxy";
 import { serverCategories } from "./ServerList";
 import type { AppSettings, SavedHost } from "./terminalTypes";
 
 /** Result of `test_connection` (src-tauri/src/conntest.rs). */
-type ConnectionTest = { address: string; port: number; banner: string; millis: number };
+type ConnectionTest = { address: string; port: number; banner: string; millis: number; viaProxy: boolean };
 
 type ServerDialogProps = {
   /** Server to edit, or null for a new one. */
@@ -17,7 +18,7 @@ type ServerDialogProps = {
   /** Category of a new server (the active category filter). */
   initialCategory: string;
   servers: SavedHost[];
-  settings: Pick<AppSettings, "appearances" | "defaultAppearanceId">;
+  settings: Pick<AppSettings, "appearances" | "defaultAppearanceId" | "proxyEnabled" | "proxyType" | "proxyHost" | "proxyPort">;
   /** Storage problem that blocks saving; shown in the dialog. */
   storageError: string;
   onSave: (server: SavedHost) => Promise<void>;
@@ -42,6 +43,9 @@ export default function ServerDialog({ server, initialCategory, servers, setting
   const [identityFile, setIdentityFile] = useState(server?.identityFile ?? "");
   const [appearanceId, setAppearanceId] = useState(server?.appearanceId ?? "");
   const [category, setCategory] = useState(server ? server.category : initialCategory);
+  // New servers connect directly; the proxy is chosen per server.
+  const [useProxy, setUseProxy] = useState(server?.useProxy ?? false);
+  const proxy = activeProxy(settings);
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ state: "running" } | { state: "ok" | "failed"; text: string } | null>(null);
@@ -86,6 +90,7 @@ export default function ServerDialog({ server, initialCategory, servers, setting
       // The design may have been deleted while this dialog was open.
       appearanceId: settings.appearances.some((item) => item.id === appearanceId) ? appearanceId : "",
       category: savedCategory,
+      useProxy,
     };
   }
 
@@ -111,8 +116,9 @@ export default function ServerDialog({ server, initialCategory, servers, setting
     setNotice("");
     setTestResult({ state: "running" });
     try {
-      const result = await invoke<ConnectionTest>("test_connection", { host: next.host, port: next.port, username: next.username || null });
-      setTestResult({ state: "ok", text: t("server.testOk", { address: `${result.address}:${result.port}`, banner: result.banner.replace(/^SSH-[\d.]+-/, ""), millis: result.millis }) });
+      const result = await invoke<ConnectionTest>("test_connection", { host: next.host, port: next.port, username: next.username || null, proxy: next.useProxy ? proxy : null });
+      const text = t("server.testOk", { address: `${result.address}:${result.port}`, banner: result.banner.replace(/^SSH-[\d.]+-/, ""), millis: result.millis });
+      setTestResult({ state: "ok", text: result.viaProxy ? `${text} · ${t("server.viaProxy")}` : text });
     } catch (error) {
       setTestResult({ state: "failed", text: translateBackend(error) });
     }
@@ -149,6 +155,12 @@ export default function ServerDialog({ server, initialCategory, servers, setting
           <button className="button button-secondary key-picker-button" onClick={() => void choosePrivateKey()} type="button">{t("server.chooseFile")}</button>
           {identityFile && <button aria-label={t("server.removeKey")} className="button button-secondary key-picker-clear" onClick={() => setIdentityFile("")} title={t("server.removeKeyTitle")} type="button">×</button>}
         </div>
+        <label className="field-label" htmlFor="server-proxy">{t("server.proxy")}</label>
+        <select id="server-proxy" onChange={(event) => setUseProxy(event.target.value === "proxy")} value={useProxy ? "proxy" : "direct"}>
+          <option value="direct">{t("server.proxyDirect")}</option>
+          <option value="proxy">{proxy ? t("server.proxyUse", { proxy: proxyLabel(proxy) }) : t("server.proxyUseUnset")}</option>
+        </select>
+        {useProxy && !proxy && <div className="form-footnote">{t("server.proxyInactive")}</div>}
         <label className="field-label" htmlFor="appearance">{t("server.design")}</label>
         <div className="key-picker">
           <select id="appearance" onChange={(event) => setAppearanceId(event.target.value)} value={appearanceId}>

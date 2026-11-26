@@ -11,6 +11,7 @@ use std::{
 
 use serde::Serialize;
 
+use crate::proxy::{connect_through, ProxyConfig};
 use crate::session::{validate_host, validate_username};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -23,8 +24,10 @@ pub(crate) struct ConnectionTest {
     pub port: u16,
     /// The server's version line, e.g. "SSH-2.0-OpenSSH_9.6".
     pub banner: String,
-    /// Time for the TCP connection in milliseconds.
+    /// Time for the TCP connection in milliseconds (through the proxy: including its handshake).
     pub millis: u64,
+    /// Tested through the Crabshell proxy.
+    pub via_proxy: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -33,6 +36,8 @@ struct SshTarget {
     port: u16,
     /// Reached through ProxyJump/ProxyCommand: a direct test would check the wrong machine.
     proxied: bool,
+    /// ServerAliveInterval from the config; 0 (OpenSSH's default) means none is set.
+    server_alive_interval: u32,
 }
 
 #[tauri::command]
@@ -40,13 +45,21 @@ pub(crate) async fn test_connection(
     host: String,
     port: Option<u16>,
     username: Option<String>,
+    proxy: Option<ProxyConfig>,
 ) -> Result<ConnectionTest, String> {
-    tauri::async_runtime::spawn_blocking(move || run(&host, port, username.as_deref()))
-        .await
-        .map_err(|_| "The connection test failed".to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        run(&host, port, username.as_deref(), proxy.as_ref())
+    })
+    .await
+    .map_err(|_| "The connection test failed".to_string())?
 }
 
-fn run(host: &str, port: Option<u16>, username: Option<&str>) -> Result<ConnectionTest, String> {
+fn run(
+    host: &str,
+    port: Option<u16>,
+    username: Option<&str>,
+    proxy: Option<&ProxyConfig>,
+) -> Result<ConnectionTest, String> {
     let host = host.trim();
     validate_host(host)?;
     let username = username.map(str::trim).filter(|name| !name.is_empty());
@@ -60,7 +73,78 @@ fn run(host: &str, port: Option<u16>, username: Option<&str>) -> Result<Connecti
                 .to_string(),
         );
     }
-    probe(&target)
+    match proxy {
+        Some(proxy) => probe_through(proxy, &target),
+        None => probe(&target),
+    }
+}
+
+/// Options Crabshell adds to an SSH connection, decided with the host's effective config
+/// (`ssh -G`), so that ~/.ssh/config always wins.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct SshOptions {
+    /// `ProxyCommand` for the Crabshell proxy; None without a proxy or when the config already
+    /// sends this host through ProxyJump/ProxyCommand.
+    pub proxy_command: Option<String>,
+    /// Seconds between keepalives (`ServerAliveInterval`); None when switched off or when the
+    /// config sets its own interval.
+    pub keepalive_seconds: Option<u16>,
+}
+
+/// Allowed keepalive interval (Settings → Behavior).
+pub(crate) const KEEPALIVE_RANGE: std::ops::RangeInclusive<u16> = 5..=300;
+
+pub(crate) fn ssh_options(
+    proxy: Option<&ProxyConfig>,
+    keepalive_seconds: Option<u16>,
+    host: &str,
+    port: Option<u16>,
+    username: Option<&str>,
+) -> Result<SshOptions, String> {
+    if proxy.is_none() && keepalive_seconds.is_none() {
+        return Ok(SshOptions::default());
+    }
+    // When the config cannot be read, ssh itself will report it; use the defaults then.
+    let target = resolve(host, port, username).ok();
+    decide_options(proxy, keepalive_seconds, target.as_ref())
+}
+
+fn decide_options(
+    proxy: Option<&ProxyConfig>,
+    keepalive_seconds: Option<u16>,
+    target: Option<&SshTarget>,
+) -> Result<SshOptions, String> {
+    let proxy_command = match proxy {
+        Some(proxy) if !target.is_some_and(|target| target.proxied) => {
+            Some(crate::proxy::proxy_command(proxy)?)
+        }
+        Some(proxy) => {
+            crate::proxy::validate_proxy(proxy)?;
+            None
+        }
+        None => None,
+    };
+    let keepalive_seconds = keepalive_seconds
+        .filter(|seconds| KEEPALIVE_RANGE.contains(seconds))
+        .filter(|_| target.is_none_or(|target| target.server_alive_interval == 0));
+    Ok(SshOptions {
+        proxy_command,
+        keepalive_seconds,
+    })
+}
+
+fn probe_through(proxy: &ProxyConfig, target: &SshTarget) -> Result<ConnectionTest, String> {
+    let started = Instant::now();
+    let stream = connect_through(proxy, &target.hostname, target.port)?;
+    let millis = started.elapsed().as_millis() as u64;
+    let banner = read_banner(stream)?;
+    Ok(ConnectionTest {
+        address: target.hostname.clone(),
+        port: target.port,
+        banner,
+        millis,
+        via_proxy: true,
+    })
 }
 
 /// Effective host name and port from `ssh -G` (no connection is made).
@@ -94,6 +178,7 @@ fn parse_ssh_config(text: &str) -> Option<SshTarget> {
     let mut hostname = None;
     let mut port = None;
     let mut proxied = false;
+    let mut server_alive_interval = 0;
     for line in text.lines() {
         let Some((key, value)) = line.split_once(' ') else {
             continue;
@@ -103,6 +188,7 @@ fn parse_ssh_config(text: &str) -> Option<SshTarget> {
             "hostname" => hostname = Some(value.to_string()),
             "port" => port = value.parse().ok(),
             "proxyjump" | "proxycommand" if !value.eq_ignore_ascii_case("none") => proxied = true,
+            "serveraliveinterval" => server_alive_interval = value.parse().unwrap_or(0),
             _ => {}
         }
     }
@@ -110,6 +196,7 @@ fn parse_ssh_config(text: &str) -> Option<SshTarget> {
         hostname: hostname.filter(|name| !name.is_empty())?,
         port: port?,
         proxied,
+        server_alive_interval,
     })
 }
 
@@ -134,6 +221,7 @@ fn probe(target: &SshTarget) -> Result<ConnectionTest, String> {
                     port: target.port,
                     banner,
                     millis,
+                    via_proxy: false,
                 });
             }
             Err(error) => {
@@ -196,7 +284,8 @@ mod tests {
             Some(SshTarget {
                 hostname: "10.0.0.5".into(),
                 port: 2222,
-                proxied: false
+                proxied: false,
+                server_alive_interval: 0,
             })
         );
         let jumped = parse_ssh_config("hostname db\nport 22\nproxyjump bastion\n").unwrap();
@@ -220,8 +309,56 @@ mod tests {
 
     #[test]
     fn refuses_invalid_hosts_before_running_ssh() {
-        assert!(run("-oProxyCommand=evil", None, None).is_err());
-        assert!(run("host", None, Some("-bad")).is_err());
+        assert!(run("-oProxyCommand=evil", None, None, None).is_err());
+        assert!(run("host", None, Some("-bad"), None).is_err());
+    }
+
+    #[test]
+    fn the_config_wins_over_proxy_and_keepalive() {
+        let proxy = ProxyConfig {
+            kind: crate::proxy::ProxyKind::Socks5,
+            host: "proxy".into(),
+            port: 1080,
+        };
+        let plain = SshTarget {
+            hostname: "h".into(),
+            port: 22,
+            proxied: false,
+            server_alive_interval: 0,
+        };
+        let options = decide_options(Some(&proxy), Some(10), Some(&plain)).unwrap();
+        assert!(options.proxy_command.is_some());
+        assert_eq!(options.keepalive_seconds, Some(10));
+
+        let configured = SshTarget {
+            proxied: true,
+            server_alive_interval: 60,
+            ..plain
+        };
+        let options = decide_options(Some(&proxy), Some(10), Some(&configured)).unwrap();
+        assert_eq!(options, SshOptions::default());
+
+        // Unreadable config: keep what the user chose; out of range: no keepalive.
+        assert_eq!(
+            decide_options(None, Some(10), None)
+                .unwrap()
+                .keepalive_seconds,
+            Some(10)
+        );
+        assert_eq!(
+            decide_options(None, Some(1), None)
+                .unwrap()
+                .keepalive_seconds,
+            None
+        );
+    }
+
+    #[test]
+    fn reads_the_keepalive_from_ssh_g_output() {
+        let own = parse_ssh_config("hostname h\nport 22\nserveraliveinterval 60\n").unwrap();
+        assert_eq!(own.server_alive_interval, 60);
+        let none = parse_ssh_config("hostname h\nport 22\nserveraliveinterval 0\n").unwrap();
+        assert_eq!(none.server_alive_interval, 0);
     }
 
     #[test]
@@ -231,6 +368,7 @@ mod tests {
             hostname: "127.0.0.1".into(),
             port: 1,
             proxied: false,
+            server_alive_interval: 0,
         };
         assert!(probe(&target)
             .unwrap_err()
@@ -244,7 +382,7 @@ mod network_tests {
     #[test]
     #[ignore]
     fn test_against_github() {
-        let result = super::run("github.com", None, None);
+        let result = super::run("github.com", None, None, None);
         println!("{result:?}");
         assert!(result.unwrap().banner.starts_with("SSH-"));
     }

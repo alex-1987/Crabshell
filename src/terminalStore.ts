@@ -7,6 +7,7 @@ import { t, translateBackend } from "./i18n";
 import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import { NO_TAB_COLOR, serverAddress } from "./labels";
 import { decodeOsc52, encodeOsc52 } from "./osc52";
+import type { ProxyConfig } from "./proxy";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
@@ -63,7 +64,20 @@ type PaneRuntime = {
    * badly after the resize. Tabs restored in the background therefore connect when first shown.
    */
   startOnFit: boolean;
+  /** First output of the current session (0 = none yet); tells a lost session from a failed start. */
+  firstOutputAt: number;
+  /** Automatic reconnect attempts in a row since the session was lost. */
+  reconnectAttempts: number;
+  reconnectTimer: number | null;
 };
+
+/** OpenSSH's exit code for "connection lost" and "could not connect". */
+const SSH_CONNECTION_ERROR = 255;
+/** A session that showed output for this long was really established (not a failed start). */
+const ESTABLISHED_MS = 10_000;
+/** Waits before the automatic reconnect attempts; the last one repeats. */
+const RECONNECT_DELAYS_MS = [5_000, 10_000, 20_000, 30_000];
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 /** Copies the active pane's fields onto the tab, so tab-level UI shows the focused pane. */
 function withActivePane(tab: TerminalTab): TerminalTab {
@@ -92,6 +106,10 @@ class TerminalStore {
   private runtimes = new Map<string, PaneRuntime>();
   private listeners = new Set<() => void>();
   private snapshot = initialSnapshot;
+  private proxy: ProxyConfig | null = null;
+  private autoReconnect = true;
+  /** Seconds between SSH keepalives; null when switched off. */
+  private keepaliveSeconds: number | null = 10;
   private clipboardPreferences: ClipboardPreferences = {
     copyOnSelect: true,
     confirmMultilinePaste: true,
@@ -116,6 +134,12 @@ class TerminalStore {
 
   constructor() {
     this.setKeybindings(undefined);
+    // Back online (WLAN switched, laptop woke up): pending reconnects need not wait.
+    window.addEventListener("online", () => {
+      for (const [paneId, runtime] of this.runtimes) {
+        if (runtime.reconnectTimer !== null) this.reconnectNow(paneId);
+      }
+    });
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -307,6 +331,22 @@ class TerminalStore {
 
   setClipboardPreferences(preferences: ClipboardPreferences): void {
     this.clipboardPreferences = preferences;
+  }
+
+  /** Reconnect SSH panes that lost their connection; switching it off stops pending reconnects. */
+  setAutoReconnect(enabled: boolean): void {
+    this.autoReconnect = enabled;
+    if (!enabled) for (const paneId of this.runtimes.keys()) this.cancelReconnect(paneId);
+  }
+
+  /** SSH keepalive interval for new connections; null switches keepalives off. */
+  setKeepalive(seconds: number | null): void {
+    this.keepaliveSeconds = seconds;
+  }
+
+  /** Proxy for servers with "use proxy"; null connects them directly. Applies to new connections. */
+  setProxy(proxy: ProxyConfig | null): void {
+    this.proxy = proxy;
   }
 
   setAppearances(appearances: Appearance[], defaultAppearanceId: string, localAppearanceId: string): void {
@@ -640,6 +680,9 @@ class TerminalStore {
       multilinePasteAllowed: false,
       writeChain: Promise.resolve(),
       startOnFit: true,
+      firstOutputAt: 0,
+      reconnectAttempts: 0,
+      reconnectTimer: null,
     };
     this.runtimes.set(id, runtime);
     terminal.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event, id));
@@ -688,6 +731,8 @@ class TerminalStore {
       server,
       status: "disconnected",
       notice: "",
+      reconnectAt: 0,
+      reconnectAttempt: 0,
       appearance,
     };
   }
@@ -831,13 +876,19 @@ class TerminalStore {
     if (paneId) await this.connectPane(paneId);
   }
 
-  /** Starts (or restarts) a pane's session: SSH for server panes, the login shell for local panes. */
-  async connectPane(paneId: string): Promise<void> {
+  /**
+   * Starts (or restarts) a pane's session: SSH for server panes, the login shell for local panes.
+   * `automatic` keeps counting the reconnect attempts; a start by the user begins anew.
+   */
+  async connectPane(paneId: string, automatic = false): Promise<void> {
     const pane = this.paneState(paneId);
     const runtime = this.runtimes.get(paneId);
     if (!pane || !runtime || runtime.closing || runtime.sessionId || pane.status === "connecting" || pane.status === "connected") return;
     const server = pane.kind === "ssh" ? pane.server : null;
     if (pane.kind === "ssh" && !server) return;
+    this.clearReconnectTimer(runtime);
+    if (!automatic) runtime.reconnectAttempts = 0;
+    runtime.firstOutputAt = 0;
 
     const sessionId = crypto.randomUUID();
     runtime.sessionId = sessionId;
@@ -850,12 +901,14 @@ class TerminalStore {
       const target = server.label ? `${server.label} (${serverAddress(server)})` : serverAddress(server);
       runtime.terminal.writeln(t("notice.connectingTo", { target }));
     }
-    this.updatePane(paneId, { status: "connecting", notice: "" });
+    this.updatePane(paneId, { status: "connecting", notice: "", reconnectAt: 0, reconnectAttempt: automatic ? runtime.reconnectAttempts : 0 });
     this.applyAppearance(paneId);
 
     const onData = new Channel<ArrayBuffer>();
     onData.onmessage = (bytes) => {
-      if (this.runtimes.get(paneId) === runtime) runtime.terminal.write(new Uint8Array(bytes));
+      if (this.runtimes.get(paneId) !== runtime) return;
+      if (!runtime.firstOutputAt) runtime.firstOutputAt = Date.now();
+      runtime.terminal.write(new Uint8Array(bytes));
     };
     const onState = new Channel<SessionEvent>();
     onState.onmessage = (event) => {
@@ -872,6 +925,7 @@ class TerminalStore {
       if (event.state === "connected") {
         requestAnimationFrame(() => requestAnimationFrame(() => this.fitPane(paneId)));
       }
+      if (event.state === "disconnected") this.scheduleReconnect(paneId, runtime, event.exitCode);
     };
 
     const terminal = runtime.terminal;
@@ -887,6 +941,8 @@ class TerminalStore {
           port: server.port,
           username: server.username || null,
           identityFile: server.identityFile || null,
+          proxy: server.useProxy ? this.proxy : null,
+          keepaliveSeconds: this.keepaliveSeconds,
           ...size,
         },
         onData,
@@ -906,6 +962,50 @@ class TerminalStore {
     } finally {
       if (runtime.connectPromise === connectPromise) runtime.connectPromise = null;
     }
+  }
+
+  /**
+   * After an SSH session ended: reconnect automatically when the connection was lost (exit code
+   * 255) after it had been established, or when an automatic attempt failed and attempts are left.
+   * `exit`, a user disconnect and a server that never answered are left alone.
+   */
+  private scheduleReconnect(paneId: string, runtime: PaneRuntime, exitCode: number | null | undefined): void {
+    const pane = this.paneState(paneId);
+    const lost = pane?.kind === "ssh" && this.autoReconnect && !runtime.closing && exitCode === SSH_CONNECTION_ERROR;
+    const established = runtime.firstOutputAt > 0 && Date.now() - runtime.firstOutputAt >= ESTABLISHED_MS;
+    if (lost && established) runtime.reconnectAttempts = 0;
+    if (!lost || (!established && (runtime.reconnectAttempts === 0 || runtime.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS))) {
+      runtime.reconnectAttempts = 0;
+      return;
+    }
+    const delay = RECONNECT_DELAYS_MS[Math.min(runtime.reconnectAttempts, RECONNECT_DELAYS_MS.length - 1)];
+    runtime.reconnectAttempts += 1;
+    this.clearReconnectTimer(runtime);
+    runtime.reconnectTimer = window.setTimeout(() => this.reconnectNow(paneId), delay);
+    this.updatePane(paneId, { reconnectAt: Date.now() + delay, reconnectAttempt: runtime.reconnectAttempts });
+  }
+
+  /** Runs a pending automatic reconnect right away ("Now" button, back online). */
+  reconnectNow(paneId: string): void {
+    const runtime = this.runtimes.get(paneId);
+    if (!runtime || runtime.reconnectTimer === null) return;
+    this.clearReconnectTimer(runtime);
+    this.updatePane(paneId, { reconnectAt: 0 });
+    void this.connectPane(paneId, true);
+  }
+
+  /** Stops a pending automatic reconnect; the pane keeps its manual reconnect button. */
+  cancelReconnect(paneId: string): void {
+    const runtime = this.runtimes.get(paneId);
+    if (!runtime || runtime.reconnectTimer === null) return;
+    this.clearReconnectTimer(runtime);
+    runtime.reconnectAttempts = 0;
+    this.updatePane(paneId, { reconnectAt: 0, reconnectAttempt: 0 });
+  }
+
+  private clearReconnectTimer(runtime: PaneRuntime): void {
+    if (runtime.reconnectTimer !== null) window.clearTimeout(runtime.reconnectTimer);
+    runtime.reconnectTimer = null;
   }
 
   /** Ends the session of the tab's active pane. */
@@ -952,6 +1052,7 @@ class TerminalStore {
 
     runtime.observer?.disconnect();
     if (runtime.selectionTimer !== null) window.clearTimeout(runtime.selectionTimer);
+    this.clearReconnectTimer(runtime);
     runtime.terminal.dispose();
     this.runtimes.delete(paneId);
     if (this.pendingPaste?.paneId === paneId) this.pendingPaste = null;

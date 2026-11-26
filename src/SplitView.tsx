@@ -1,4 +1,4 @@
-import { Fragment, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { t } from "./i18n";
 import { NO_TAB_COLOR } from "./labels";
 import TerminalPane from "./TerminalPane";
@@ -16,6 +16,7 @@ type SplitViewProps = {
  * with a restart/reconnect button; other notices (e.g. "copied to the clipboard") fade out.
  */
 function PaneOverlay({ pane, statusLabel }: { pane: TerminalPaneState; statusLabel: (status: SessionStatus) => string }) {
+  if (pane.reconnectAt > 0) return <ReconnectOverlay pane={pane} />;
   // A pane that has not started yet is also "disconnected", but without a message: no overlay.
   const ended = pane.status === "failed" || (pane.status === "disconnected" && pane.notice !== "");
   if (ended) {
@@ -29,6 +30,26 @@ function PaneOverlay({ pane, statusLabel }: { pane: TerminalPaneState; statusLab
   }
   // Keyed by the text, so the same message shown again restarts the fade-out.
   return pane.notice ? <div aria-live="polite" className="pane-overlay pane-toast" key={pane.notice}>{pane.notice}</div> : null;
+}
+
+/** Lost connection: countdown to the automatic reconnect, with "Now" and "Cancel". */
+function ReconnectOverlay({ pane }: { pane: TerminalPaneState }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.ceil((pane.reconnectAt - now) / 1000));
+  return (
+    <div className="pane-overlay pane-overlay-ended" role="status">
+      <span className="pane-overlay-text">
+        {t("reconnect.countdown", { seconds })}
+        {pane.reconnectAttempt > 1 && ` · ${t("reconnect.attempt", { attempt: pane.reconnectAttempt })}`}
+      </span>
+      <button className="pane-overlay-button" onClick={() => terminalStore.reconnectNow(pane.id)} type="button">↻ {t("reconnect.now")}</button>
+      <button className="pane-overlay-button" onClick={() => terminalStore.cancelReconnect(pane.id)} type="button">{t("common.cancel")}</button>
+    </div>
+  );
 }
 
 /** The terminal area of a tab: one pane, or two panes side by side / stacked with a draggable divider. */

@@ -14,6 +14,9 @@ pub(crate) trait TerminalSession: Send + Sync {
     fn write(&self, data: &[u8]) -> Result<(), String>;
     fn resize(&self, cols: u16, rows: u16) -> Result<(), String>;
     fn close(&self) -> Result<(), String>;
+    /// Exit code of a process that ended on its own; waits briefly, since the output usually
+    /// closes just before the process exits. None while it still runs or when unknown.
+    fn exit_code(&self) -> Option<u32>;
 }
 
 pub(crate) type SessionReader = Box<dyn Read + Send>;
@@ -35,6 +38,7 @@ impl PtySession {
         port: Option<u16>,
         username: Option<&str>,
         identity_file: Option<&str>,
+        options: &crate::conntest::SshOptions,
         cols: u16,
         rows: u16,
     ) -> Result<(Self, SessionReader), String> {
@@ -48,7 +52,7 @@ impl PtySession {
         validate_identity_file(identity_file)?;
         validate_size(cols, rows)?;
         Self::spawn(
-            ssh_command(host, port, username, identity_file),
+            ssh_command(host, port, username, identity_file, options),
             cols,
             rows,
             SSH_MISSING,
@@ -107,6 +111,20 @@ impl PtySession {
 }
 
 impl TerminalSession for PtySession {
+    fn exit_code(&self) -> Option<u32> {
+        for _ in 0..20 {
+            let mut child = self.child.lock().ok()?;
+            match child.as_mut()?.try_wait() {
+                Ok(Some(status)) => return Some(status.exit_code()),
+                Ok(None) => {}
+                Err(_) => return None,
+            }
+            drop(child);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        None
+    }
+
     fn write(&self, data: &[u8]) -> Result<(), String> {
         let mut writer = self
             .writer
@@ -225,6 +243,7 @@ fn ssh_command(
     port: Option<u16>,
     username: Option<&str>,
     identity_file: Option<&str>,
+    options: &crate::conntest::SshOptions,
 ) -> CommandBuilder {
     let mut command = CommandBuilder::new("ssh");
     set_terminal_env(&mut command);
@@ -243,6 +262,19 @@ fn ssh_command(
         command.arg(identity_file);
         command.arg("-o");
         command.arg("IdentitiesOnly=yes");
+    }
+    if let Some(seconds) = options.keepalive_seconds {
+        // A connection that died silently (VPN cut) ends after 3 unanswered keepalives with exit
+        // code 255, so the pane can reconnect.
+        command.arg("-o");
+        command.arg(format!("ServerAliveInterval={seconds}"));
+        command.arg("-o");
+        command.arg("ServerAliveCountMax=3");
+    }
+    if let Some(proxy_command) = &options.proxy_command {
+        // One argument; OpenSSH runs the value itself (see proxy.rs).
+        command.arg("-o");
+        command.arg(format!("ProxyCommand={proxy_command}"));
     }
     command.arg("--");
     command.arg(host);
@@ -310,6 +342,8 @@ pub(crate) fn validate_session_id(session_id: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::conntest::SshOptions;
+
     use super::{
         local_shell_command, ssh_command, validate_host, validate_identity_file,
         validate_session_id, validate_size, validate_username,
@@ -346,7 +380,13 @@ mod tests {
 
     #[test]
     fn builds_ssh_arguments_without_shell_interpolation() {
-        let command = ssh_command("node-a", Some(22), Some("admin"), None);
+        let command = ssh_command(
+            "node-a",
+            Some(22),
+            Some("admin"),
+            None,
+            &SshOptions::default(),
+        );
         let arguments = argv(&command);
         assert_eq!(
             arguments,
@@ -363,7 +403,7 @@ mod tests {
 
     #[test]
     fn passes_non_default_ports_only() {
-        let command = ssh_command("node-a", Some(2222), None, None);
+        let command = ssh_command("node-a", Some(2222), None, None, &SshOptions::default());
         let arguments = argv(&command);
         assert_eq!(arguments, vec!["ssh", "-tt", "-p", "2222", "--", "node-a"]);
     }
@@ -371,7 +411,13 @@ mod tests {
     #[test]
     fn passes_selected_identity_as_a_single_argument() {
         let identity_file = "/home/alex/ssh keys/id_ed25519";
-        let command = ssh_command("node-a", None, Some("admin"), Some(identity_file));
+        let command = ssh_command(
+            "node-a",
+            None,
+            Some("admin"),
+            Some(identity_file),
+            &SshOptions::default(),
+        );
         let arguments = argv(&command);
         assert_eq!(
             arguments,
@@ -388,6 +434,52 @@ mod tests {
                 "node-a".to_string(),
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_the_exit_code_of_a_process_that_ended() {
+        use super::{PtySession, TerminalSession};
+        use std::io::Read;
+        let mut command = portable_pty::CommandBuilder::new("sh");
+        command.args(["-c", "exit 255"]);
+        let (session, mut reader) = PtySession::spawn(command, 80, 24, "sh missing").unwrap();
+        let mut output = Vec::new();
+        let _ = reader.read_to_end(&mut output);
+        assert_eq!(session.exit_code(), Some(255));
+        session.close().unwrap();
+    }
+
+    #[test]
+    fn passes_the_proxy_command_as_one_option() {
+        let options = SshOptions {
+            proxy_command: Some("'/opt/crab' --proxy-connect socks5 p 1080 %h %p".into()),
+            keepalive_seconds: Some(10),
+        };
+        let command = ssh_command("node-a", None, None, None, &options);
+        let args = argv(&command);
+        assert!(args.contains(&"ServerAliveInterval=10".to_string()));
+        assert!(args.contains(&"ServerAliveCountMax=3".to_string()));
+        let position = args
+            .iter()
+            .position(|arg| arg.starts_with("ProxyCommand="))
+            .unwrap();
+        assert_eq!(args[position - 1], "-o");
+        assert_eq!(
+            args[position],
+            "ProxyCommand='/opt/crab' --proxy-connect socks5 p 1080 %h %p"
+        );
+        assert_eq!(&args[args.len() - 2..], ["--", "node-a"]);
+        // Without proxy and keepalive nothing is added.
+        assert!(!argv(&ssh_command(
+            "node-a",
+            None,
+            None,
+            None,
+            &SshOptions::default()
+        ))
+        .iter()
+        .any(|arg| arg.contains("ProxyCommand") || arg.contains("ServerAlive")));
     }
 
     #[test]

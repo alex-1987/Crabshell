@@ -7,7 +7,8 @@ import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import ShortcutList from "./ShortcutList";
 import { DEFAULT_APPEARANCE_ID, MAX_FONT_SIZE, MIN_FONT_SIZE, pathColorOf, promptColorOf } from "./appearance";
 import { designTabColorOf } from "./labels";
-import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, SavedHost, ThemeMode } from "./terminalTypes";
+import type { AppSettings, Appearance, ClickMode, ClipboardReadMode, ProxyType, SavedHost, ThemeMode } from "./terminalTypes";
+import { activeProxy } from "./proxy";
 import { languageFromLocale, translateBackend, languageNames, languages, t, type LanguageSetting, type MessageKey } from "./i18n";
 import { themeModeCycle, themeModeLabel, UI_SCALE_MAX, UI_SCALE_MIN } from "./uiTheme";
 
@@ -20,7 +21,7 @@ type SettingsDialogProps = {
   onClose: () => void;
 };
 
-type Section = "display" | "terminal" | "behavior" | "prompts" | "shortcuts" | "system" |"appearances";
+type Section = "display" | "terminal" | "behavior" | "prompts" | "shortcuts" | "proxy" | "system" | "appearances";
 
 /** Left navigation of the settings dialog, in this order. */
 const sections: { id: Section; label: MessageKey }[] = [
@@ -29,6 +30,7 @@ const sections: { id: Section; label: MessageKey }[] = [
   { id: "behavior", label: "settings.behavior" },
   { id: "prompts", label: "settings.prompts" },
   { id: "shortcuts", label: "settings.shortcuts" },
+  { id: "proxy", label: "settings.proxy" },
   { id: "system", label: "settings.system" },
   { id: "appearances", label: "settings.designs" },
 ];
@@ -263,6 +265,30 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                   <option value="restore">{t("settings.startupRestore")}</option>
                 </select>
                 <div className="form-footnote">{t("settings.startupHint")}</div>
+                <label className="sidebar-setting">
+                  <input checked={draft.autoReconnect} onChange={(event) => setDraft({ ...draft, autoReconnect: event.target.checked })} type="checkbox" />
+                  <span>{t("settings.autoReconnect")}</span>
+                </label>
+                <div className="form-footnote">{t("settings.autoReconnectHint")}</div>
+                <div className="keepalive-row">
+                  <label className="sidebar-setting">
+                    <input checked={draft.keepaliveEnabled} onChange={(event) => setDraft({ ...draft, keepaliveEnabled: event.target.checked })} type="checkbox" />
+                    <span>{t("settings.keepalive")}</span>
+                  </label>
+                  <input
+                    aria-label={t("settings.keepaliveSeconds")}
+                    className="port-input"
+                    disabled={!draft.keepaliveEnabled}
+                    inputMode="numeric"
+                    onBlur={() => setDraft({ ...draft, keepaliveSeconds: Math.min(300, Math.max(5, draft.keepaliveSeconds || 10)) })}
+                    onChange={(event) => setDraft({ ...draft, keepaliveSeconds: Number(event.target.value.replace(/\D/g, "").slice(0, 3)) || 0 })}
+                    title={t("settings.keepaliveSeconds")}
+                    type="text"
+                    value={draft.keepaliveSeconds || ""}
+                  />
+                  <span>{t("settings.seconds")}</span>
+                </div>
+                <div className="form-footnote">{t("settings.keepaliveHint", { seconds: (draft.keepaliveSeconds || 10) * 3 })}</div>
               </div>
             )}
 
@@ -288,6 +314,32 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
             )}
 
             {section === "shortcuts" && <ShortcutList keybindings={draft.keybindings} onChange={(keybindings) => setDraft({ ...draft, keybindings })} />}
+
+            {section === "proxy" && (
+              <div className="settings-panel" role="tabpanel">
+                <div className="form-footnote">{t("settings.proxyIntro")}</div>
+                <label className="sidebar-setting">
+                  <input checked={draft.proxyEnabled} onChange={(event) => setDraft({ ...draft, proxyEnabled: event.target.checked })} type="checkbox" />
+                  <span>{t("settings.proxyEnabled")}</span>
+                </label>
+                <label className="field-label" htmlFor="proxy-type">{t("settings.proxyType")}</label>
+                <select id="proxy-type" onChange={(event) => setDraft({ ...draft, proxyType: event.target.value as ProxyType })} value={draft.proxyType}>
+                  <option value="socks5">SOCKS5</option>
+                  <option value="http">HTTP (CONNECT)</option>
+                </select>
+                <label className="field-label" htmlFor="proxy-host">{t("settings.proxyHost")}</label>
+                <div className="host-port-row">
+                  <input autoComplete="off" id="proxy-host" onChange={(event) => setDraft({ ...draft, proxyHost: event.target.value.trim() })} placeholder="proxy.example.com" spellCheck={false} value={draft.proxyHost} />
+                  <input aria-label={t("settings.proxyPort")} autoComplete="off" className="port-input" inputMode="numeric" onChange={(event) => setDraft({ ...draft, proxyPort: Number(event.target.value.replace(/\D/g, "").slice(0, 5)) || 0 })} placeholder={draft.proxyType === "http" ? "8080" : "1080"} title={t("settings.proxyPort")} type="text" value={draft.proxyPort || ""} />
+                </div>
+                <div aria-live="polite" className="form-footnote">
+                  {activeProxy(draft)
+                    ? t("settings.proxyActive", { count: servers.filter((server) => server.useProxy).length })
+                    : draft.proxyEnabled ? t("settings.proxyIncomplete") : t("settings.proxyOff")}
+                </div>
+                <div className="form-footnote">{t("settings.proxyNotes")}</div>
+              </div>
+            )}
 
             {section === "system" && (
               <div className="settings-panel" role="tabpanel">

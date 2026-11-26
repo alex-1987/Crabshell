@@ -667,3 +667,8 @@ input, .key-picker-button, .key-picker-clear { height: 32px; }
 .import-row-details { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--text-muted); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .import-row-saved { cursor: default; opacity: 0.6; }
 .import-row-saved:hover { background: transparent; }
+
+/* Keepalive: checkbox, seconds field and unit in one row. */
+.keepalive-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
+.keepalive-row .sidebar-setting { margin: 8px 0; }
+.keepalive-row .port-input { width: 64px; height: 28px; text-align: center; }

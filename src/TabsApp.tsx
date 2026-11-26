@@ -10,6 +10,7 @@ import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabC
 import { readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
 import ServerDialog from "./ServerDialog";
 import SshImportDialog from "./SshImportDialog";
+import { activeProxy } from "./proxy";
 import { serverCategories, type ServerListProps } from "./ServerList";
 import ServerSidebar, { type ServerFilters } from "./ServerSidebar";
 import SettingsDialog from "./SettingsDialog";
@@ -218,6 +219,9 @@ export default function TabsApp() {
     settingsRef.current = normalized;
     setAppSettings(normalized);
     terminalStore.setClipboardPreferences(normalized);
+    terminalStore.setProxy(activeProxy(normalized));
+    terminalStore.setAutoReconnect(normalized.autoReconnect);
+    terminalStore.setKeepalive(normalized.keepaliveEnabled ? normalized.keepaliveSeconds : null);
     terminalStore.setKeybindings(normalized.keybindings);
     terminalStore.setTerminalFont(normalized.terminalFont);
     terminalStore.setAppearances(normalized.appearances, normalized.defaultAppearanceId, normalized.localAppearanceId);

@@ -38,6 +38,7 @@ impl SessionEntry {
         let event = match &result {
             Ok(()) => SessionEvent::Disconnected {
                 message: message.to_string(),
+                exit_code: None,
             },
             Err(error) => SessionEvent::Failed {
                 message: error.clone(),
@@ -56,6 +57,12 @@ pub(crate) struct ConnectRequest {
     port: Option<u16>,
     username: Option<String>,
     identity_file: Option<String>,
+    /// Only set when the server uses the proxy and the proxy is switched on and filled in.
+    #[serde(default)]
+    proxy: Option<crate::proxy::ProxyConfig>,
+    /// Seconds between SSH keepalives; None when switched off.
+    #[serde(default)]
+    keepalive_seconds: Option<u16>,
     cols: u16,
     rows: u16,
 }
@@ -73,8 +80,16 @@ pub(crate) struct LocalShellRequest {
 pub(crate) enum SessionEvent {
     Connecting,
     Connected,
-    Disconnected { message: String },
-    Failed { message: String },
+    Disconnected {
+        message: String,
+        /// Exit code when the process ended on its own (OpenSSH: 255 = connection lost or
+        /// failed); None when Crabshell closed it.
+        #[serde(rename = "exitCode")]
+        exit_code: Option<u32>,
+    },
+    Failed {
+        message: String,
+    },
 }
 
 const MANAGER_UNAVAILABLE: &str = "The session manager is unavailable";
@@ -111,14 +126,27 @@ impl AppState {
     }
 }
 
+/// Async: reading the host's config (`ssh -G`) runs a process, which must not block the window.
 #[tauri::command]
-pub(crate) fn connect_host(
+pub(crate) async fn connect_host(
     request: ConnectRequest,
     on_data: tauri::ipc::Channel<InvokeResponseBody>,
     on_state: tauri::ipc::Channel<SessionEvent>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    let (proxy, keepalive, host, port, username) = (
+        request.proxy.clone(),
+        request.keepalive_seconds,
+        request.host.clone(),
+        request.port,
+        request.username.clone(),
+    );
+    let options = tauri::async_runtime::spawn_blocking(move || {
+        crate::conntest::ssh_options(proxy.as_ref(), keepalive, &host, port, username.as_deref())
+    })
+    .await
+    .map_err(|_| MANAGER_UNAVAILABLE.to_string())??;
     start_session(
         request.session_id,
         || {
@@ -127,6 +155,7 @@ pub(crate) fn connect_host(
                 request.port,
                 request.username.as_deref(),
                 request.identity_file.as_deref(),
+                &options,
                 request.cols,
                 request.rows,
             )
@@ -281,6 +310,7 @@ fn finish_session(
 
     let _ = on_state.send(SessionEvent::Disconnected {
         message: message.to_string(),
+        exit_code: session.exit_code(),
     });
     if let Ok(mut sessions) = app_handle.state::<AppState>().sessions() {
         // Only this run's entry; the id may already belong to a new session.

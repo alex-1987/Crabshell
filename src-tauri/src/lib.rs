@@ -2,6 +2,7 @@ mod browser;
 mod conntest;
 mod desktop;
 mod fonts;
+mod proxy;
 mod session;
 mod sessions;
 mod snippets;
@@ -102,6 +103,8 @@ fn locale_from(get: impl Fn(&str) -> Option<String>) -> Option<String> {
             !value.is_empty() && value != "C" && value != "POSIX" && !value.starts_with("C.")
         })
 }
+
+pub use proxy::run_helper as run_proxy_helper;
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()

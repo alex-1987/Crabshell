@@ -55,6 +55,13 @@ export const defaultSettings: AppSettings = {
   terminalFont: "",
   categoryOrder: [],
   tagOrder: [],
+  proxyEnabled: false,
+  proxyType: "socks5",
+  proxyHost: "",
+  proxyPort: 1080,
+  autoReconnect: true,
+  keepaliveEnabled: true,
+  keepaliveSeconds: 10,
 };
 
 /** ANSI palette of dark designs; designs override the base colors. */

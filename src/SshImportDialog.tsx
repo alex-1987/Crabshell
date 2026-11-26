@@ -84,6 +84,7 @@ export default function SshImportDialog({ servers, initialCategory, onImport, on
         identityFile: "",
         appearanceId: "",
         category: savedCategory,
+        useProxy: false,
       }));
     setSaving(true);
     try {

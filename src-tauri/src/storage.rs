@@ -39,6 +39,9 @@ pub(crate) struct ServerProfile {
     /// Sidebar group; empty means "no category".
     #[serde(default)]
     pub category: String,
+    /// Connect through the proxy from the settings (only while it is switched on and filled in).
+    #[serde(default)]
+    pub use_proxy: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -126,12 +129,26 @@ pub(crate) struct AppSettings {
     pub category_order: Vec<String>,
     /// Order of the snippet tags (lower case); missing ones follow alphabetically.
     pub tag_order: Vec<String>,
+    /// Proxy for servers that use it; off means every connection is direct.
+    pub proxy_enabled: bool,
+    /// "socks5" or "http".
+    pub proxy_type: String,
+    /// Empty until the user enters a proxy.
+    pub proxy_host: String,
+    pub proxy_port: u16,
+    /// Reconnect SSH sessions that lost their connection (OpenSSH exit code 255).
+    pub auto_reconnect: bool,
+    /// Send SSH keepalives, so a connection that died silently ends and can reconnect.
+    pub keepalive_enabled: bool,
+    /// Seconds between keepalives (ServerAliveInterval).
+    pub keepalive_seconds: u16,
 }
 
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
 const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
+const PROXY_TYPES: [&str; 2] = ["socks5", "http"];
 /// Same list as KEY_ACTIONS in src/keybindings.ts.
 const KEY_ACTIONS: [&str; 15] = [
     "copy",
@@ -212,6 +229,13 @@ impl Default for AppSettings {
             terminal_font: String::new(),
             category_order: Vec::new(),
             tag_order: Vec::new(),
+            proxy_enabled: false,
+            proxy_type: "socks5".to_string(),
+            proxy_host: String::new(),
+            proxy_port: 1080,
+            auto_reconnect: true,
+            keepalive_enabled: true,
+            keepalive_seconds: 10,
         }
     }
 }
@@ -294,6 +318,29 @@ const SETTING_RULES: &[SettingRule] = &[
         valid: |settings| valid_order(&settings.tag_order, crate::snippets::MAX_TAG_CHARS),
         reset: |settings| normalize_order(&mut settings.tag_order, crate::snippets::MAX_TAG_CHARS),
         error: "Invalid tag order",
+    },
+    SettingRule {
+        valid: |settings| PROXY_TYPES.contains(&settings.proxy_type.as_str()),
+        reset: |settings| settings.proxy_type = AppSettings::default().proxy_type,
+        error: "Unknown proxy type",
+    },
+    SettingRule {
+        valid: |settings| {
+            settings.proxy_host.is_empty()
+                || crate::session::validate_host(&settings.proxy_host).is_ok()
+        },
+        reset: |settings| settings.proxy_host.clear(),
+        error: "Enter a valid proxy host and port",
+    },
+    SettingRule {
+        valid: |settings| settings.proxy_port != 0,
+        reset: |settings| settings.proxy_port = AppSettings::default().proxy_port,
+        error: "Enter a valid proxy host and port",
+    },
+    SettingRule {
+        valid: |settings| crate::conntest::KEEPALIVE_RANGE.contains(&settings.keepalive_seconds),
+        reset: |settings| settings.keepalive_seconds = AppSettings::default().keepalive_seconds,
+        error: "The keepalive interval must be between 5 and 300 seconds",
     },
 ];
 
@@ -694,6 +741,7 @@ mod tests {
             identity_file: String::new(),
             appearance_id: String::new(),
             category: String::new(),
+            use_proxy: false,
         };
         assert!(validate_servers(&[profile]).is_err());
     }
@@ -709,6 +757,7 @@ mod tests {
             identity_file: String::new(),
             appearance_id: String::new(),
             category: "Home lab".into(),
+            use_proxy: true,
         };
         assert!(validate_servers(std::slice::from_ref(&profile)).is_ok());
         profile.category = " padded ".into();
@@ -804,7 +853,8 @@ mod tests {
 
         let mut settings: AppSettings = serde_json::from_str(
             r#"{"sidebarWidth":5,"themeMode":"neon","uiScale":999,"uiFont":" x",
-                "keybindings":{"copy":["Ctrl+Shift+C"],"nope":["X"]}}"#,
+                "keybindings":{"copy":["Ctrl+Shift+C"],"nope":["X"]},
+                "proxyType":"ftp","proxyHost":"-oEvil","proxyPort":0}"#,
         )
         .unwrap();
         assert!(SETTING_RULES.iter().any(|rule| !(rule.valid)(&settings)));
@@ -818,6 +868,9 @@ mod tests {
         assert_eq!(settings.theme_mode, defaults.theme_mode);
         assert!(settings.ui_font.is_empty());
         assert_eq!(settings.keybindings.len(), 1);
+        assert_eq!(settings.proxy_type, "socks5");
+        assert!(settings.proxy_host.is_empty());
+        assert_eq!(settings.proxy_port, defaults.proxy_port);
     }
 
     #[test]
