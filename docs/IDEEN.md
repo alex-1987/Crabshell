@@ -2,14 +2,14 @@
 
 Gesammelte Ideen für kommende Versionen (Stand: 0.2.8, November 2026). Umgesetzte Punkte sind durchgestrichen und mit ✅ markiert.
 
-**Vorschlag für die nächste Version:** Snippet-Variablen und klickbare Links.
+**Vorschlag für die nächste Version:** Snippet-Variablen.
 
 ## Großer Nutzen, überschaubarer Aufwand
 
 1. ~~**Import aus `~/.ssh/config`:** Hosts als Server vorschlagen und per Häkchen übernehmen.~~ ✅ umgesetzt
 2. ~~**Automatisch neu verbinden:** Nach einem Abbruch (Standby, WLAN-Wechsel) „In 5 s neu verbinden“ anbieten, auf Wunsch automatisch.~~ ✅ umgesetzt
 3. **Snippet-Variablen** wie `systemctl restart {{dienst}}`, die beim Einfügen kurz abgefragt werden.
-4. **Klickbare Links** im Terminal über `@xterm/addon-web-links`, Öffnen mit Ctrl+Klick.
+4. ~~**Klickbare Links** im Terminal, Öffnen mit Ctrl+Klick.~~ ✅ umgesetzt (ohne Zusatzpaket, über die Link-Schnittstelle von xterm.js)
 
 ## Komfort
 

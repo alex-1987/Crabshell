@@ -8,6 +8,7 @@ import { DEFAULT_TERMINAL_FONT, fontStack } from "./fonts";
 import { NO_TAB_COLOR, serverAddress } from "./labels";
 import { decodeOsc52, encodeOsc52 } from "./osc52";
 import type { ProxyConfig } from "./proxy";
+import { enableTerminalLinks } from "./links";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
@@ -686,6 +687,13 @@ class TerminalStore {
     };
     this.runtimes.set(id, runtime);
     terminal.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event, id));
+    // Web links: Ctrl+click opens them in the browser; hovering shows the address.
+    enableTerminalLinks(terminal, {
+      onHover: (url) => {
+        if (terminal.element) terminal.element.title = url ? `${url}\n${t("links.hint")}` : "";
+      },
+      onError: (error) => this.updatePane(id, { notice: t("notice.linkFailed", { error: translateBackend(error) }) }),
+    });
     // OSC 52: programs (micro with clipboard = terminal, vim, tmux, ...) set the clipboard.
     terminal.parser.registerOscHandler(52, (data) => {
       if (this.runtimes.get(id) !== runtime) return true;

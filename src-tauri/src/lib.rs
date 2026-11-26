@@ -127,6 +127,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             conntest::test_connection,
             sshconfig::ssh_config_hosts,
             browser::open_in_browser,
+            browser::open_terminal_link,
             save_servers,
             save_settings,
             snippets_list,
