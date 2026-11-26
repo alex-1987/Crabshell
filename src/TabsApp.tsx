@@ -1,7 +1,8 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import AboutDialog from "./AboutDialog";
 import { defaultSettings } from "./appearance";
 import { ClipboardReadDialog, CloseConfirmDialog, PasteConfirmDialog } from "./ConfirmDialogs";
@@ -10,6 +11,9 @@ import { automaticTitleOf, runningSessionCount, serverAddress, statusLabel, tabC
 import { readWelcomeHidden, restoreSession, sessionTabsOf, writeWelcomeHidden, type PersistentData } from "./persistence";
 import ServerDialog from "./ServerDialog";
 import SshImportDialog from "./SshImportDialog";
+import FilePanel, { type FileLocation } from "./FilePanel";
+import { joinRemote, localFileName, sftpApi, sftpStore, type ConnectOptions } from "./sftp";
+import UploadDialog, { type UploadRequest } from "./UploadDialog";
 import { activeProxy } from "./proxy";
 import { serverCategories, type ServerListProps } from "./ServerList";
 import ServerSidebar, { type ServerFilters } from "./ServerSidebar";
@@ -24,7 +28,7 @@ import TabRenameField from "./TabRenameField";
 import TerminalContextMenu from "./TerminalContextMenu";
 import TerminalTabPanel, { SplitIcon } from "./TerminalTabPanel";
 import { terminalStore } from "./terminalStore";
-import type { AppSettings, SavedHost, SessionState, SplitDirection, SplitTarget } from "./terminalTypes";
+import type { AppSettings, RightPanel, SavedHost, SessionState, SplitDirection, SplitTarget } from "./terminalTypes";
 import { themeModeCycle, themeModeLabel, useUiTheme } from "./uiTheme";
 import { usePanelLayout } from "./usePanelLayout";
 import { useSnippets } from "./useSnippets";
@@ -34,6 +38,18 @@ import { useTabDrag } from "./useTabDrag";
 import { useTabOverflow } from "./useTabOverflow";
 import WelcomeGuide from "./WelcomeGuide";
 import "./styles.css";
+
+/** "Snippets | Files" at the top of the right-hand panel. */
+function PanelSwitch({ active, snippetCount, onChange }: { active: RightPanel; snippetCount: number; onChange: (panel: RightPanel) => void }) {
+  return (
+    <div aria-label={t("panel.switch")} className="panel-switch" role="tablist">
+      <button aria-selected={active === "snippets"} className="panel-switch-tab" onClick={() => onChange("snippets")} role="tab" type="button">
+        {t("sidebar.snippets")} <span>{snippetCount}</span>
+      </button>
+      <button aria-selected={active === "files"} className="panel-switch-tab" onClick={() => onChange("files")} role="tab" type="button">{t("files.title")}</button>
+    </div>
+  );
+}
 
 export default function TabsApp() {
   const [savedHosts, setSavedHosts] = useState<SavedHost[]>([]);
@@ -48,6 +64,12 @@ export default function TabsApp() {
   /** Server dialog: undefined = closed, null = new server. */
   const [serverDialog, setServerDialog] = useState<SavedHost | null | undefined>(undefined);
   const [importOpen, setImportOpen] = useState(false);
+  const [pendingUpload, setPendingUpload] = useState<UploadRequest | null>(null);
+  /** Files dragged over the window: which drop target is under the mouse. */
+  const [dropTarget, setDropTarget] = useState<"files" | "terminal" | null>(null);
+  const fileLocationRef = useRef<FileLocation | null>(null);
+  /** Terminal menu "Open folder in the file browser"; the nonce makes a repeat count. */
+  const [folderRequest, setFolderRequest] = useState<{ dir: string; nonce: number } | null>(null);
   const [sidebarNotice, setSidebarNotice] = useState("");
   const [serverFilters, setServerFilters] = useState<ServerFilters>({ category: null, query: "", collapsedGroups: new Set() });
   /** Snippet tag filter (lower case), null shows all. */
@@ -88,6 +110,66 @@ export default function TabsApp() {
   const { tabs, activeTabId } = terminalSnapshot;
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
   const canInsertSnippet = activeTab?.status === "connected";
+  /** Server of the active pane, shown in the file browser. */
+  const fileServer = activeTab?.kind === "ssh" ? activeTab.server : null;
+  const sftpOptions = useMemo<ConnectOptions>(
+    () => ({ proxy: activeProxy(appSettings), keepaliveSeconds: appSettings.keepaliveEnabled ? appSettings.keepaliveSeconds : null }),
+    // Only the values matter; a new settings object with the same proxy must not reconnect.
+    [appSettings.proxyEnabled, appSettings.proxyType, appSettings.proxyHost, appSettings.proxyPort, appSettings.keepaliveEnabled, appSettings.keepaliveSeconds],
+  );
+  const onFileLocation = useCallback((location: FileLocation | null) => { fileLocationRef.current = location; }, []);
+
+  // Close file connections of servers that no tab shows any more.
+  const openServerIds = tabs.flatMap((tab) => tab.panes).map((pane) => pane.server?.id ?? "").filter(Boolean).sort().join("\n");
+  useEffect(() => {
+    sftpStore.keepOnly(new Set(openServerIds.split("\n").filter(Boolean)));
+  }, [openServerIds]);
+
+  // Files dragged in from the desktop: onto the file browser or onto an SSH terminal.
+  const dropRef = useRef<(paths: string[], x: number, y: number) => void>(() => undefined);
+  const dragOverRef = useRef<(x: number, y: number) => void>(() => undefined);
+  const dropPaneRef = useRef<HTMLElement | null>(null);
+  const markDropPane = (pane: HTMLElement | null) => {
+    if (dropPaneRef.current === pane) return;
+    dropPaneRef.current?.classList.remove("pane-drop-target");
+    pane?.classList.add("pane-drop-target");
+    dropPaneRef.current = pane;
+  };
+  dragOverRef.current = (x, y) => {
+    const element = document.elementFromPoint(x, y);
+    const pane = element?.closest<HTMLElement>("[data-pane-kind='ssh']") ?? null;
+    markDropPane(pane);
+    setDropTarget(element?.closest(".file-panel") ? "files" : pane ? "terminal" : null);
+  };
+  dropRef.current = (paths, x, y) => {
+    setDropTarget(null);
+    markDropPane(null);
+    const element = document.elementFromPoint(x, y);
+    if (!paths.length || !element) return;
+    const location = fileLocationRef.current;
+    if (element.closest(".file-panel")) {
+      if (location) void requestUpload(location, paths, false);
+      return;
+    }
+    const pane = element.closest<HTMLElement>("[data-pane-kind='ssh']");
+    if (pane?.dataset.paneId) void dropOnTerminal(pane.dataset.paneId, paths);
+  };
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    // Positions come in physical pixels.
+    const point = (position: { x: number; y: number }) => [position.x / window.devicePixelRatio, position.y / window.devicePixelRatio] as const;
+    void getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === "leave") dragOverRef.current(-1, -1);
+      else if (payload.type === "drop") dropRef.current(payload.paths, ...point(payload.position));
+      else dragOverRef.current(...point(payload.position));
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
   const tabDrag = useTabDrag(tabs, activeTabId, titleOf);
   // Changes whenever the width of the tabs can change: added, closed, moved, renamed, editing a name.
   const tabLayoutKey = `${tabs.map((tab) => `${tab.id}:${titleOf(tab)}`).join("|")}|${renamingTabId ?? ""}`;
@@ -172,7 +254,22 @@ export default function TabsApp() {
   toggleServersRef.current = panels.toggleServers;
   const requestNewTabRef = useRef(requestNewTab);
   requestNewTabRef.current = requestNewTab;
+  const openFolderRef = useRef<(dir: string) => void>(() => undefined);
+  const showFilesRef = useRef(() => undefined as void);
+  showFilesRef.current = () => {
+    setRightPanel("files");
+    if (!panels.showSnippets) panels.toggleSnippets();
+  };
+  openFolderRef.current = (dir) => {
+    setFolderRequest((current) => ({ dir, nonce: (current?.nonce ?? 0) + 1 }));
+    setRightPanel("files");
+    if (!panels.showSnippets) panels.toggleSnippets();
+  };
   useEffect(() => {
+    // The menu acts on the pane it was opened in, which is then the active one.
+    terminalStore.onOpenFolder((_paneId, dir) => openFolderRef.current(dir));
+    // A file saved in the editor waits for "Upload": show the file browser.
+    sftpStore.onAttention(() => showFilesRef.current());
     terminalStore.onSnippetShortcut(() => setPickerOpen(true));
     terminalStore.onSplitShortcut((direction, at) => requestSplitRef.current(direction, null, at));
     terminalStore.onSidebarShortcut(() => toggleServersRef.current());
@@ -182,6 +279,8 @@ export default function TabsApp() {
       terminalStore.onSplitShortcut(null);
       terminalStore.onSidebarShortcut(null);
       terminalStore.onNewTabShortcut(null);
+      terminalStore.onOpenFolder(null);
+      sftpStore.onAttention(null);
     };
   }, []);
 
@@ -238,7 +337,7 @@ export default function TabsApp() {
   async function saveSettingsDialog(settings: AppSettings) {
     // Keep the panel layout from the live settings; the dialog does not edit it.
     const live = settingsRef.current;
-    const next = { ...settings, sidebarWidth: live.sidebarWidth, sidebarCollapsed: live.sidebarCollapsed, snippetPanelOpen: live.snippetPanelOpen, snippetPanelWidth: live.snippetPanelWidth };
+    const next = { ...settings, sidebarWidth: live.sidebarWidth, sidebarCollapsed: live.sidebarCollapsed, snippetPanelOpen: live.snippetPanelOpen, snippetPanelWidth: live.snippetPanelWidth, rightPanel: live.rightPanel };
     await invoke("save_settings", { settings: next });
     applySettings(next);
 
@@ -399,7 +498,56 @@ export default function TabsApp() {
   }
 
   function showSnippetPanel() {
+    setRightPanel("snippets");
     if (!panels.showSnippets) panels.toggleSnippets();
+  }
+
+  function setRightPanel(panel: RightPanel) {
+    if (settingsRef.current.rightPanel !== panel) persistSettings({ ...settingsRef.current, rightPanel: panel });
+  }
+
+  /** 📁 in the tab bar: shows the file browser, or hides the panel when it already shows it. */
+  function toggleFilePanel() {
+    if (panels.showSnippets && settingsRef.current.rightPanel === "files") return panels.toggleSnippets();
+    setRightPanel("files");
+    if (!panels.showSnippets) panels.toggleSnippets();
+  }
+
+  /**
+   * Upload into the file browser's folder: straight away, unless files would be replaced.
+   * Dropped onto a terminal: always ask, the target folder can still be changed.
+   */
+  async function requestUpload(location: FileLocation, localPaths: string[], editable: boolean) {
+    const serverName = location.server.label || serverAddress(location.server);
+    const request: UploadRequest = { connection: location.connection, serverName, localPaths, dir: location.dir, editable };
+    if (!editable) {
+      const existing = await sftpApi.existing(location.connection, localPaths.map((path) => joinRemote(location.dir, localFileName(path)))).catch(() => []);
+      if (existing.length === 0) return void startUpload(request, location.dir);
+    }
+    setPendingUpload(request);
+  }
+
+  function startUpload(request: UploadRequest, dir: string) {
+    setPendingUpload(null);
+    // Show the transfer (and, after the drop on a terminal, where it went).
+    setRightPanel("files");
+    if (!panels.showSnippets) panels.toggleSnippets();
+    sftpStore.upload(request.connection, request.serverName, request.localPaths, dir).catch((error: unknown) => {
+      setSidebarNotice(translateBackend(error));
+    });
+  }
+
+  /** Files dropped onto an SSH terminal: upload to that pane's server, asking for the folder. */
+  async function dropOnTerminal(paneId: string, localPaths: string[]) {
+    const pane = tabs.flatMap((tab) => tab.panes).find((item) => item.id === paneId);
+    const server = pane?.kind === "ssh" ? pane.server : null;
+    if (!server) return;
+    try {
+      const connection = await sftpStore.connect(server, sftpOptions);
+      await requestUpload({ connection, server, dir: sftpStore.lastDir(server.id) ?? connection.home }, localPaths, true);
+    } catch (error) {
+      terminalStore.showNotice(paneId, translateBackend(error));
+    }
   }
 
   function cycleThemeMode() {
@@ -509,7 +657,8 @@ export default function TabsApp() {
             <button aria-label={t("topbar.openSettings")} className="tabbar-button" disabled={!usable} onClick={() => setSettingsOpen({})} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
             {/* The snippet panel opens on the right, so its toggle sits at the far right. */}
             <span aria-hidden="true" className="tabbar-separator" />
-            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets} className="tabbar-button" disabled={!usable} onClick={panels.toggleSnippets} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
+            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets && appSettings.rightPanel === "snippets"} className="tabbar-button" disabled={!usable} onClick={() => (panels.showSnippets && appSettings.rightPanel !== "snippets" ? setRightPanel("snippets") : panels.toggleSnippets())} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
+            <button aria-controls="snippet-panel" aria-label={t("files.toggle")} aria-pressed={panels.showSnippets && appSettings.rightPanel === "files"} className="tabbar-button" disabled={!usable} onClick={toggleFilePanel} title={t("files.toggle")} type="button"><span aria-hidden="true">📁</span></button>
           </div>
         </div>
 
@@ -540,10 +689,32 @@ export default function TabsApp() {
 
       </main>
 
-      {panels.showSnippets && (
+      {panels.showSnippets && appSettings.rightPanel === "files" && (
+        <>
+          <div {...panels.resizerProps("snippets")} />
+          <FilePanel
+            dropActive={dropTarget === "files"}
+            editor={appSettings.editor}
+            follow={appSettings.filesFollowTerminal}
+            onFollow={(follow) => persistSettings({ ...settingsRef.current, filesFollowTerminal: follow })}
+            openRequest={folderRequest}
+            terminalDir={activeTab?.kind === "ssh" ? activeTab.panes.find((pane) => pane.id === activeTab.activePaneId)?.cwd ?? "" : ""}
+            onCd={(command) => { terminalStore.insertSnippet(command, false); terminalStore.focusActiveTerminal(); }}
+            onHide={panels.toggleSnippets}
+            onLocation={onFileLocation}
+            onUpload={(location, paths) => void requestUpload(location, paths, false)}
+            options={sftpOptions}
+            panelSwitch={<PanelSwitch active="files" onChange={setRightPanel} snippetCount={snippets.snippets.length} />}
+            server={fileServer}
+          />
+          <button aria-label={t("snippetPanel.hide")} className="sidebar-backdrop snippet-panel-backdrop" onClick={panels.toggleSnippets} tabIndex={-1} type="button" />
+        </>
+      )}
+      {panels.showSnippets && appSettings.rightPanel === "snippets" && (
         <>
           <div {...panels.resizerProps("snippets")} />
           <SnippetPanel
+            panelSwitch={<PanelSwitch active="snippets" onChange={setRightPanel} snippetCount={snippets.snippets.length} />}
             canInsert={canInsertSnippet}
             doubleClick={appSettings.snippetInsertClick === "double"}
             error={snippets.error}
@@ -586,6 +757,13 @@ export default function TabsApp() {
           onSave={async (server) => { await saveServer(server); }}
           server={serverDialog}
           {...serverDialogProps}
+        />
+      )}
+      {pendingUpload && (
+        <UploadDialog
+          onCancel={() => setPendingUpload(null)}
+          onConfirm={(dir) => startUpload(pendingUpload, dir)}
+          request={pendingUpload}
         />
       )}
       {importOpen && (

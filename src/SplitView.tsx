@@ -105,6 +105,8 @@ export default function SplitView({ tab, paneTitle, statusLabel }: SplitViewProp
             )}
             <div
               className={`terminal-pane-box${active ? " terminal-pane-active" : ""}`}
+              data-pane-id={pane.id}
+              data-pane-kind={pane.kind}
               style={{ flex: `${index === 0 ? ratio : 1 - ratio} 1 0`, "--terminal-bg": pane.appearance.background, // The active pane keeps its marker line even when the tab has no color.
               "--tab-color": (tab.customColor !== NO_TAB_COLOR && tab.customColor) || pane.appearance.tabColor } as CSSProperties}
             >

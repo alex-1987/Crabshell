@@ -142,6 +142,13 @@ pub(crate) struct AppSettings {
     pub keepalive_enabled: bool,
     /// Seconds between keepalives (ServerAliveInterval).
     pub keepalive_seconds: u16,
+    /// Tab of the right-hand panel: "snippets" or "files" (file browser).
+    pub right_panel: String,
+    /// The file browser follows the folder of the active terminal.
+    pub files_follow_terminal: bool,
+    /// Program for "Edit" in the file browser: an absolute path or a command name; empty means
+    /// the system's default application for the file.
+    pub editor: String,
 }
 
 const THEME_MODES: [&str; 3] = ["system", "light", "dark"];
@@ -149,6 +156,7 @@ const LANGUAGES: [&str; 3] = ["system", "en", "de"];
 const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
 const PROXY_TYPES: [&str; 2] = ["socks5", "http"];
+const RIGHT_PANELS: [&str; 2] = ["snippets", "files"];
 /// Same list as KEY_ACTIONS in src/keybindings.ts.
 const KEY_ACTIONS: [&str; 16] = [
     "copy",
@@ -237,6 +245,9 @@ impl Default for AppSettings {
             auto_reconnect: true,
             keepalive_enabled: true,
             keepalive_seconds: 10,
+            right_panel: "snippets".to_string(),
+            files_follow_terminal: false,
+            editor: String::new(),
         }
     }
 }
@@ -342,6 +353,18 @@ const SETTING_RULES: &[SettingRule] = &[
         valid: |settings| crate::conntest::KEEPALIVE_RANGE.contains(&settings.keepalive_seconds),
         reset: |settings| settings.keepalive_seconds = AppSettings::default().keepalive_seconds,
         error: "The keepalive interval must be between 5 and 300 seconds",
+    },
+    SettingRule {
+        valid: |settings| RIGHT_PANELS.contains(&settings.right_panel.as_str()),
+        reset: |settings| settings.right_panel = AppSettings::default().right_panel,
+        error: "Unknown panel",
+    },
+    SettingRule {
+        valid: |settings| {
+            settings.editor.is_empty() || crate::sftp::edit::valid_editor(&settings.editor)
+        },
+        reset: |settings| settings.editor.clear(),
+        error: "The program for editing files is not valid",
     },
 ];
 

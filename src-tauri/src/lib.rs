@@ -5,6 +5,7 @@ mod fonts;
 mod proxy;
 mod session;
 mod sessions;
+mod sftp;
 mod snippets;
 mod sshconfig;
 mod storage;
@@ -111,6 +112,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .manage(AppState::default())
         .manage(snippets::SnippetStore::default())
+        .manage(sftp::SftpState::default())
+        .manage(sftp::edit::EditState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -130,6 +133,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             browser::open_in_browser,
             browser::open_terminal_link,
             transcript::save_terminal_output,
+            sftp::sftp_connect,
+            sftp::sftp_disconnect,
+            sftp::sftp_list,
+            sftp::sftp_realpath,
+            sftp::sftp_mkdir,
+            sftp::sftp_rename,
+            sftp::sftp_remove,
+            sftp::sftp_existing,
+            sftp::sftp_pick_files,
+            sftp::sftp_upload,
+            sftp::sftp_download,
+            sftp::sftp_cancel,
+            sftp::edit::sftp_edit,
+            sftp::edit::sftp_edit_show,
+            sftp::edit::sftp_edit_upload,
+            sftp::edit::sftp_edit_close,
             save_servers,
             save_settings,
             snippets_list,
@@ -146,6 +165,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             // Not on CloseRequested: the frontend may cancel the close to ask first.
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<AppState>().close_all();
+                window.state::<sftp::SftpState>().close_all();
+                window.state::<sftp::edit::EditState>().close_all();
             }
         })
         .run(tauri::generate_context!())?;

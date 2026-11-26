@@ -37,6 +37,7 @@ import type { Keybindings } from "./keybindings";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type ProxyType = "socks5" | "http";
+export type RightPanel = "snippets" | "files";
 export type ClipboardReadMode = "ask" | "always" | "never";
 /** Clicks needed to open a server or paste a snippet from the side panels. */
 export type ClickMode = "single" | "double";
@@ -104,6 +105,12 @@ export type AppSettings = {
   keepaliveEnabled: boolean;
   /** Seconds between keepalives (5–300); the connection ends after 3 unanswered ones. */
   keepaliveSeconds: number;
+  /** Tab of the right-hand panel. */
+  rightPanel: RightPanel;
+  /** The file browser follows the folder of the active terminal. */
+  filesFollowTerminal: boolean;
+  /** Program for "Edit" in the file browser (path or command name); "" = system default. */
+  editor: string;
   /** Proxy for servers that use it; off means every connection is direct. */
   proxyEnabled: boolean;
   proxyType: ProxyType;
@@ -140,6 +147,8 @@ export type TerminalPaneState = {
   reconnectAt: number;
   /** Number of that automatic attempt (1 = first). */
   reconnectAttempt: number;
+  /** Folder the remote shell reported (OSC 7 or the prompt's title); "" when unknown. May start with "~". */
+  cwd: string;
   appearance: Appearance;
 };
 
@@ -186,6 +195,10 @@ export type TerminalContextMenu = {
   split: boolean;
   /** The tab currently types into all panes. */
   broadcast: boolean;
+  /** SSH pane: offers "Open folder in the file browser". */
+  ssh: boolean;
+  /** Folder the shell reported; "" when unknown. */
+  cwd: string;
   x: number;
   y: number;
   hasSelection: boolean;

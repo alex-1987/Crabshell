@@ -62,6 +62,9 @@ export const defaultSettings: AppSettings = {
   autoReconnect: true,
   keepaliveEnabled: true,
   keepaliveSeconds: 10,
+  rightPanel: "snippets",
+  filesFollowTerminal: false,
+  editor: "",
 };
 
 /** ANSI palette of dark designs; designs override the base colors. */

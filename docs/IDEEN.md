@@ -7,11 +7,11 @@ Gesammelte Ideen für kommende Versionen (Stand: 0.2.16, November 2026).
 ## Offen
 
 1. **Snippets importieren und exportieren** als JSON, auch zum Teilen.
-2. **Dateien hochladen:** Eine Datei ins Terminal ziehen lädt sie per `scp` oder SFTP hoch.
-3. **Code-Signing für Windows**, damit die SmartScreen-Warnung verschwindet. Kostet Geld, alternativ SignPath für Open-Source-Projekte.
+2. **Code-Signing für Windows**, damit die SmartScreen-Warnung verschwindet. Kostet Geld, alternativ SignPath für Open-Source-Projekte.
 
 ## Umgesetzt
 
+- ✅ **SFTP-Dateibrowser** in der rechten Leiste: Ordner ansehen, Hoch- und Herunterladen (auch Dateien ins Terminal ziehen), Ordner anlegen, umbenennen, löschen, „Im Terminal öffnen“. Ganze Ordner hoch- und herunterladen, Dateien bearbeiten und nach dem Speichern zurückladen wie bei FileZilla (0.3.0). Noch nicht: Rechte ändern.
 - ✅ **In allen Panes gleichzeitig tippen** (Broadcast) im Split View, mit roter Warnanzeige, nie gespeichert.
 - ✅ **Terminal-Ausgabe als Textdatei speichern** über das Rechtsklick-Menü.
 - ✅ **Import aus `~/.ssh/config`:** Hosts als Server vorschlagen und per Häkchen übernehmen (0.2.14).

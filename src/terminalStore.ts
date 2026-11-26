@@ -9,6 +9,7 @@ import { NO_TAB_COLOR, serverAddress } from "./labels";
 import { decodeOsc52, encodeOsc52 } from "./osc52";
 import type { ProxyConfig } from "./proxy";
 import { enableTerminalLinks } from "./links";
+import { dirFromOsc7, dirFromTitle } from "./terminalCwd";
 import { comboFromEvent, KEY_ACTIONS, primaryCombo, resolveKeybindings, type KeyAction, type Keybindings } from "./keybindings";
 import type { Appearance, ClipboardReadMode, PendingClipboardRead, PendingPaste, SavedHost, SessionEvent, SessionStatus, SplitDirection, SplitTarget, TabKind, TerminalContextMenu, TerminalPaneState, TerminalSnapshot, TerminalTab } from "./terminalTypes";
 
@@ -70,6 +71,8 @@ type PaneRuntime = {
   /** Automatic reconnect attempts in a row since the session was lost. */
   reconnectAttempts: number;
   reconnectTimer: number | null;
+  /** The shell reports its folder with OSC 7; titles are then not used for it. */
+  cwdFromOsc7: boolean;
 };
 
 /** OpenSSH's exit code for "connection lost" and "could not connect". */
@@ -135,6 +138,7 @@ class TerminalStore {
   };
   private pendingPaste: PendingPaste | null = null;
   private snippetShortcutHandler: (() => void) | null = null;
+  private openFolderHandler: ((paneId: string, dir: string) => void) | null = null;
   private sidebarShortcutHandler: (() => void) | null = null;
   private newTabShortcutHandler: (() => void) | null = null;
   private splitShortcutHandler: ((direction: SplitDirection, at: { x: number; y: number } | null) => void) | null = null;
@@ -166,6 +170,15 @@ class TerminalStore {
   getSnapshot = (): TerminalSnapshot => this.snapshot;
 
   /** Called when Ctrl+Shift+S is pressed inside a terminal. */
+  /** "Open folder in the file browser" from the terminal menu. */
+  onOpenFolder(handler: ((paneId: string, dir: string) => void) | null): void {
+    this.openFolderHandler = handler;
+  }
+
+  private setCwd(paneId: string, cwd: string): void {
+    if (this.paneState(paneId)?.cwd !== cwd) this.updatePane(paneId, { cwd });
+  }
+
   onSnippetShortcut(handler: (() => void) | null): void {
     this.snippetShortcutHandler = handler;
   }
@@ -215,7 +228,7 @@ class TerminalStore {
     if (focus) this.runtimes.get(menu.paneId)?.terminal.focus();
   }
 
-  runContextAction(action: "copy" | "paste" | "selectAll" | "snippets" | "saveOutput" | "broadcast" | "splitRow" | "splitColumn" | "closePane"): void {
+  runContextAction(action: "copy" | "paste" | "selectAll" | "snippets" | "saveOutput" | "openFolder" | "broadcast" | "splitRow" | "splitColumn" | "closePane"): void {
     const menu = this.contextMenu;
     if (!menu) return;
     const keepsFocus = action === "copy" || action === "paste" || action === "selectAll";
@@ -230,6 +243,10 @@ class TerminalStore {
     else if (action === "closePane") void this.closePane(menu.paneId);
     else if (action === "saveOutput") void this.saveOutput(menu.paneId);
     else if (action === "broadcast") this.toggleBroadcast(runtime.tabId);
+    else if (action === "openFolder") {
+      const cwd = this.paneState(menu.paneId)?.cwd;
+      if (cwd) this.openFolderHandler?.(menu.paneId, cwd);
+    }
     else this.snippetShortcutHandler?.();
   }
 
@@ -404,6 +421,11 @@ class TerminalStore {
 
   setClipboardPreferences(preferences: ClipboardPreferences): void {
     this.clipboardPreferences = preferences;
+  }
+
+  /** A short message in a pane (fades out), e.g. why a drop could not be uploaded. */
+  showNotice(paneId: string, notice: string): void {
+    this.updatePane(paneId, { notice });
   }
 
   /** Reconnect SSH panes that lost their connection; switching it off stops pending reconnects. */
@@ -756,6 +778,7 @@ class TerminalStore {
       firstOutputAt: 0,
       reconnectAttempts: 0,
       reconnectTimer: null,
+      cwdFromOsc7: false,
     };
     this.runtimes.set(id, runtime);
     terminal.attachCustomKeyEventHandler((event) => this.handleTerminalKey(event, id));
@@ -767,6 +790,20 @@ class TerminalStore {
       onError: (error) => this.updatePane(id, { notice: t("notice.linkFailed", { error: translateBackend(error) }) }),
     });
     // OSC 52: programs (micro with clipboard = terminal, vim, tmux, ...) set the clipboard.
+    // The folder the shell is in: OSC 7, else the "user@host: dir" title of standard prompts.
+    terminal.parser.registerOscHandler(7, (data) => {
+      const dir = this.runtimes.get(id) === runtime ? dirFromOsc7(data) : null;
+      if (dir) {
+        runtime.cwdFromOsc7 = true;
+        this.setCwd(id, dir);
+      }
+      return true;
+    });
+    terminal.onTitleChange((title) => {
+      if (this.runtimes.get(id) !== runtime || runtime.cwdFromOsc7) return;
+      const dir = dirFromTitle(title);
+      if (dir) this.setCwd(id, dir);
+    });
     terminal.parser.registerOscHandler(52, (data) => {
       if (this.runtimes.get(id) !== runtime) return true;
       const [rawTarget, payload] = data.split(";", 2);
@@ -813,6 +850,7 @@ class TerminalStore {
       notice: "",
       reconnectAt: 0,
       reconnectAttempt: 0,
+      cwd: "",
       appearance,
     };
   }
@@ -928,6 +966,8 @@ class TerminalStore {
         paneId,
         split: (tab?.panes.length ?? 1) > 1,
         broadcast: tab?.broadcast ?? false,
+        ssh: this.paneState(paneId)?.kind === "ssh",
+        cwd: this.paneState(paneId)?.cwd ?? "",
         x: event.clientX,
         y: event.clientY,
         hasSelection: terminal.hasSelection(),
@@ -971,6 +1011,8 @@ class TerminalStore {
     this.clearReconnectTimer(runtime);
     if (!automatic) runtime.reconnectAttempts = 0;
     runtime.firstOutputAt = 0;
+    // A new session reports its folder anew.
+    runtime.cwdFromOsc7 = false;
 
     const sessionId = crypto.randomUUID();
     runtime.sessionId = sessionId;
@@ -983,7 +1025,7 @@ class TerminalStore {
       const target = server.label ? `${server.label} (${serverAddress(server)})` : serverAddress(server);
       runtime.terminal.writeln(t("notice.connectingTo", { target }));
     }
-    this.updatePane(paneId, { status: "connecting", notice: "", reconnectAt: 0, reconnectAttempt: automatic ? runtime.reconnectAttempts : 0 });
+    this.updatePane(paneId, { status: "connecting", notice: "", cwd: "", reconnectAt: 0, reconnectAttempt: automatic ? runtime.reconnectAttempts : 0 });
     this.applyAppearance(paneId);
 
     const onData = new Channel<ArrayBuffer>();

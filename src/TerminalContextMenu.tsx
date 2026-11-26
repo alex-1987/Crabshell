@@ -3,18 +3,20 @@ import { terminalStore } from "./terminalStore";
 import type { TerminalContextMenu as MenuState } from "./terminalTypes";
 import { useFloatingMenu } from "./useFloatingMenu";
 
-type Action = "copy" | "paste" | "selectAll" | "snippets" | "saveOutput" | "broadcast" | "splitRow" | "splitColumn" | "closePane";
+type Action = "copy" | "paste" | "selectAll" | "snippets" | "saveOutput" | "openFolder" | "broadcast" | "splitRow" | "splitColumn" | "closePane";
 
 /** Right-click menu for terminals; shown even when a program has taken over the mouse. */
 export default function TerminalContextMenu({ menu }: { menu: MenuState }) {
   const { ref, position, handleMenuKey } = useFloatingMenu({ x: menu.x, y: menu.y, onClose: () => terminalStore.closeContextMenu() });
 
-  const items: { action: Action; label: string; shortcut?: string; disabled?: boolean; separator?: boolean }[] = [
+  const items: { action: Action; label: string; shortcut?: string; disabled?: boolean; separator?: boolean; hint?: string }[] = [
     { action: "copy", label: t("menu.copy"), shortcut: terminalStore.shortcutLabel("copy"), disabled: !menu.hasSelection },
     { action: "paste", label: t("menu.paste"), shortcut: terminalStore.shortcutLabel("paste"), disabled: !menu.canPaste },
     { action: "selectAll", label: t("menu.selectAll") },
     { action: "snippets", label: t("menu.snippets"), shortcut: terminalStore.shortcutLabel("snippets") },
     { action: "saveOutput", label: t("menu.saveOutput") },
+    // Only SSH panes; greyed out while the shell has not told its folder.
+    ...(menu.ssh ? [{ action: "openFolder" as const, label: t("menu.openFolder"), disabled: !menu.cwd, hint: menu.cwd || t("menu.openFolderUnknown") }] : []),
     // A split tab offers switching the direction; the shortcuts always split with the same session.
     { action: "splitRow", label: menu.split ? t("menu.layoutRow") : t("menu.splitRow"), shortcut: menu.split ? undefined : terminalStore.shortcutLabel("splitRight"), separator: true },
     { action: "splitColumn", label: menu.split ? t("menu.layoutColumn") : t("menu.splitColumn"), shortcut: menu.split ? undefined : terminalStore.shortcutLabel("splitDown") },
@@ -27,7 +29,7 @@ export default function TerminalContextMenu({ menu }: { menu: MenuState }) {
   return (
     <div aria-label={t("menu.label")} className="context-menu" onContextMenu={(event) => event.preventDefault()} onKeyDown={handleMenuKey} ref={ref} role="menu" style={position}>
       {items.map((item) => (
-        <button className={`context-menu-item${item.separator ? " context-menu-separated" : ""}`} disabled={item.disabled} key={item.action} onClick={() => terminalStore.runContextAction(item.action)} role="menuitem" type="button">
+        <button className={`context-menu-item${item.separator ? " context-menu-separated" : ""}`} disabled={item.disabled} key={item.action} onClick={() => terminalStore.runContextAction(item.action)} role="menuitem" title={item.hint} type="button">
           <span>{item.label}</span>
           {item.shortcut && <kbd>{item.shortcut}</kbd>}
         </button>

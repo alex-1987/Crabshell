@@ -248,40 +248,60 @@ fn ssh_command(
     let mut command = CommandBuilder::new("ssh");
     set_terminal_env(&mut command);
     command.arg("-tt");
+    command.args(ssh_target_args(
+        host,
+        port,
+        username,
+        identity_file,
+        options,
+    ));
+    command
+}
+
+/// Options and target shared by the terminal session and the file browser (SFTP), ending
+/// with `-- host`: port, user, key, keepalive and proxy, each as its own argument.
+pub(crate) fn ssh_target_args(
+    host: &str,
+    port: Option<u16>,
+    username: Option<&str>,
+    identity_file: Option<&str>,
+    options: &crate::conntest::SshOptions,
+) -> Vec<String> {
+    let mut args = Vec::new();
     // Port 22 is not passed, so a `Port` from ~/.ssh/config still applies to aliases.
     if let Some(port) = port.filter(|port| *port != crate::storage::DEFAULT_SSH_PORT) {
-        command.arg("-p");
-        command.arg(port.to_string());
+        args.extend(["-p".to_string(), port.to_string()]);
     }
     if let Some(username) = username {
-        command.arg("-l");
-        command.arg(username);
+        args.extend(["-l".to_string(), username.to_string()]);
     }
     if let Some(identity_file) = identity_file {
-        command.arg("-i");
-        command.arg(identity_file);
-        command.arg("-o");
-        command.arg("IdentitiesOnly=yes");
+        args.extend([
+            "-i".to_string(),
+            identity_file.to_string(),
+            "-o".to_string(),
+            "IdentitiesOnly=yes".to_string(),
+        ]);
     }
     if let Some(seconds) = options.keepalive_seconds {
         // A connection that died silently (VPN cut) ends after 3 unanswered keepalives with exit
         // code 255, so the pane can reconnect.
-        command.arg("-o");
-        command.arg(format!("ServerAliveInterval={seconds}"));
-        command.arg("-o");
-        command.arg("ServerAliveCountMax=3");
+        args.extend([
+            "-o".to_string(),
+            format!("ServerAliveInterval={seconds}"),
+            "-o".to_string(),
+            "ServerAliveCountMax=3".to_string(),
+        ]);
     }
     if let Some(proxy_command) = &options.proxy_command {
         // One argument; OpenSSH runs the value itself (see proxy.rs).
-        command.arg("-o");
-        command.arg(format!("ProxyCommand={proxy_command}"));
+        args.extend(["-o".to_string(), format!("ProxyCommand={proxy_command}")]);
     }
-    command.arg("--");
-    command.arg(host);
-    command
+    args.extend(["--".to_string(), host.to_string()]);
+    args
 }
 
-fn validate_identity_file(identity_file: Option<&str>) -> Result<(), String> {
+pub(crate) fn validate_identity_file(identity_file: Option<&str>) -> Result<(), String> {
     if let Some(identity_file) = identity_file {
         let path = Path::new(identity_file);
         if !path.is_absolute() || !path.is_file() {

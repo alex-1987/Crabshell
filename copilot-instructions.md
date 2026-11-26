@@ -26,7 +26,7 @@ Die SSH-Verbindung läuft über das **installierte OpenSSH** (`ssh`) als Unterpr
 2. ✅ Host-Import aus `~/.ssh/config`
 3. ✅ Tabs und Split-Panes (eine Session pro Pane)
 4. ✅ Snippets (einfügen, nicht automatisch senden)
-5. SFTP (später, noch nicht anfangen)
+5. ✅ SFTP-Dateibrowser (rechte Leiste „Dateien“): Crabshell startet `ssh -o BatchMode=yes … -s -- host sftp` und spricht über stdin/stdout nur das SFTP-Protokoll v3 (`src-tauri/src/sftp/`). Transport, Login, `~/.ssh/config`, ProxyJump und known_hosts bleiben bei OpenSSH; das ist keine eigene SSH-Implementierung. Lokale Zielpfade für Downloads wählt immer ein Dialog im Backend.
 
 Weitere Ideen stehen in `docs/IDEEN.md`. Baue neue Funktionen nur, wenn ich darum bitte.
 

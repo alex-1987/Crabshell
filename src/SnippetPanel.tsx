@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import FilterChips from "./FilterChips";
 import { t } from "./i18n";
 import { withShortcut } from "./labels";
@@ -6,6 +7,8 @@ import { snippetTags, type Snippet } from "./snippets";
 import { terminalStore } from "./terminalStore";
 
 type SnippetPanelProps = {
+  /** The "Snippets | Files" switch shown as the heading. */
+  panelSwitch: ReactNode;
   snippets: Snippet[];
   ready: boolean;
   error: string;
@@ -40,7 +43,7 @@ export default function SnippetPanel(props: SnippetPanelProps) {
   return (
     <aside aria-label={t("sidebar.snippets")} className="sidebar snippet-panel" id="snippet-panel">
       <div className="server-list-heading">
-        <div><h1>{t("sidebar.snippets")}</h1><span>{snippets.length}</span></div>
+        {props.panelSwitch}
         <div className="sidebar-heading-actions">
           <button aria-label={pickerLabel} className="icon-button" onClick={props.onOpenPicker} title={pickerLabel} type="button"><span aria-hidden="true">⌕</span></button>
           <button aria-label={t("snippets.add")} className="icon-button" disabled={!ready || Boolean(error)} onClick={props.onAdd} title={t("snippets.add")} type="button"><span aria-hidden="true">+</span></button>

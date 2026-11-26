@@ -1,3 +1,4 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
 import ColorField from "./ColorField";
 import DesktopIntegration from "./DesktopIntegration";
@@ -350,6 +351,23 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                 </label>
                 <div className="form-footnote">{t("settings.checkUpdatesHint")}</div>
                 <UpdateCheckButton />
+                <h3>{t("settings.editor")}</h3>
+                <div className="key-picker">
+                  <span className="key-picker-name" title={draft.editor || undefined}>{draft.editor || t("settings.editorDefault")}</span>
+                  <button
+                    className="button button-secondary key-picker-button"
+                    onClick={() => {
+                      void open({ multiple: false, directory: false, title: t("settings.editorPick") }).then((picked) => {
+                        if (typeof picked === "string") setDraft({ ...draft, editor: picked });
+                      }).catch(() => undefined);
+                    }}
+                    type="button"
+                  >
+                    {t("settings.editorPick")}
+                  </button>
+                  {draft.editor && <button aria-label={t("settings.editorReset")} className="button button-secondary key-picker-clear" onClick={() => setDraft({ ...draft, editor: "" })} title={t("settings.editorReset")} type="button">×</button>}
+                </div>
+                <div className="form-footnote">{t("settings.editorHint")}</div>
                 <DesktopIntegration />
               </div>
             )}
