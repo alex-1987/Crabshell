@@ -150,7 +150,7 @@ const CLIPBOARD_READ_MODES: [&str; 3] = ["ask", "always", "never"];
 const CLICK_MODES: [&str; 2] = ["single", "double"];
 const PROXY_TYPES: [&str; 2] = ["socks5", "http"];
 /// Same list as KEY_ACTIONS in src/keybindings.ts.
-const KEY_ACTIONS: [&str; 15] = [
+const KEY_ACTIONS: [&str; 16] = [
     "copy",
     "paste",
     "snippets",
@@ -166,6 +166,7 @@ const KEY_ACTIONS: [&str; 15] = [
     "zoomReset",
     "toggleSidebar",
     "newTab",
+    "broadcast",
 ];
 const MAX_BINDINGS_PER_ACTION: usize = 4;
 const MAX_COMBO_LEN: usize = 40;

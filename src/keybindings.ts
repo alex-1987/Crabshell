@@ -16,7 +16,8 @@ export type KeyAction =
   | "zoomOut"
   | "zoomReset"
   | "toggleSidebar"
-  | "newTab";
+  | "newTab"
+  | "broadcast";
 
 /** Stored per action; actions that are missing use the defaults. An empty list disables the action. */
 export type Keybindings = Partial<Record<KeyAction, string[]>>;
@@ -33,6 +34,7 @@ export const KEY_ACTIONS: { action: KeyAction; label: MessageKey }[] = [
   { action: "splitRight", label: "keys.splitRight" },
   { action: "splitDown", label: "keys.splitDown" },
   { action: "otherPane", label: "keys.otherPane" },
+  { action: "broadcast", label: "keys.broadcast" },
   { action: "zoomIn", label: "keys.zoomIn" },
   { action: "zoomOut", label: "keys.zoomOut" },
   { action: "zoomReset", label: "keys.zoomReset" },
@@ -57,6 +59,7 @@ export const DEFAULT_KEYBINDINGS: Record<KeyAction, string[]> = {
   // Not Ctrl+B: that is the tmux prefix and "back one character" in shells.
   toggleSidebar: ["Ctrl+Shift+B"],
   newTab: ["Ctrl+Shift+N"],
+  broadcast: ["Ctrl+Shift+A"],
 };
 
 /** Same limits as the backend (storage.rs). */

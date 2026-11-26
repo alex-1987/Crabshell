@@ -3,7 +3,7 @@ import { terminalStore } from "./terminalStore";
 import type { TerminalContextMenu as MenuState } from "./terminalTypes";
 import { useFloatingMenu } from "./useFloatingMenu";
 
-type Action = "copy" | "paste" | "selectAll" | "snippets" | "splitRow" | "splitColumn" | "closePane";
+type Action = "copy" | "paste" | "selectAll" | "snippets" | "saveOutput" | "broadcast" | "splitRow" | "splitColumn" | "closePane";
 
 /** Right-click menu for terminals; shown even when a program has taken over the mouse. */
 export default function TerminalContextMenu({ menu }: { menu: MenuState }) {
@@ -14,10 +14,14 @@ export default function TerminalContextMenu({ menu }: { menu: MenuState }) {
     { action: "paste", label: t("menu.paste"), shortcut: terminalStore.shortcutLabel("paste"), disabled: !menu.canPaste },
     { action: "selectAll", label: t("menu.selectAll") },
     { action: "snippets", label: t("menu.snippets"), shortcut: terminalStore.shortcutLabel("snippets") },
+    { action: "saveOutput", label: t("menu.saveOutput") },
     // A split tab offers switching the direction; the shortcuts always split with the same session.
     { action: "splitRow", label: menu.split ? t("menu.layoutRow") : t("menu.splitRow"), shortcut: menu.split ? undefined : terminalStore.shortcutLabel("splitRight"), separator: true },
     { action: "splitColumn", label: menu.split ? t("menu.layoutColumn") : t("menu.splitColumn"), shortcut: menu.split ? undefined : terminalStore.shortcutLabel("splitDown") },
-    ...(menu.split ? [{ action: "closePane" as const, label: t("menu.closePane"), shortcut: terminalStore.shortcutLabel("close") }] : []),
+    ...(menu.split ? [
+      { action: "broadcast" as const, label: menu.broadcast ? t("broadcast.stop") : t("broadcast.start"), shortcut: terminalStore.shortcutLabel("broadcast") },
+      { action: "closePane" as const, label: t("menu.closePane"), shortcut: terminalStore.shortcutLabel("close") },
+    ] : []),
   ];
 
   return (

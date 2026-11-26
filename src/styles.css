@@ -672,3 +672,11 @@ input, .key-picker-button, .key-picker-clear { height: 32px; }
 .keepalive-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
 .keepalive-row .sidebar-setting { margin: 8px 0; }
 .keepalive-row .port-input { width: 64px; height: 28px; text-align: center; }
+
+/* Broadcast: typing goes to every pane of the tab. Hard to miss on purpose. */
+.terminal-split-broadcast .terminal-pane-box { box-shadow: inset 0 0 0 2px var(--danger); }
+.terminal-split-broadcast .terminal-pane-box:not(.terminal-pane-active) .terminal-body { opacity: 1; }
+.pane-broadcast-badge { position: absolute; z-index: 2; bottom: 10px; left: 12px; display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border-radius: 4px; color: #fff; background: var(--danger); font-size: 12px; font-weight: 600; }
+.pane-broadcast-badge button { padding: 2px 8px; border: 1px solid rgb(255 255 255 / 0.7); border-radius: 3px; color: #fff; background: transparent; cursor: pointer; font-size: 12px; }
+.pane-broadcast-badge button:hover { background: rgb(255 255 255 / 0.18); }
+.tab-broadcast-mark { flex: 0 0 auto; color: var(--danger); font-size: 12px; font-weight: 700; line-height: 1; }

@@ -478,6 +478,7 @@ export default function TabsApp() {
                 ) : (
                   <button aria-selected={tab.id === activeTabId} className="terminal-tab-select" onClick={() => terminalStore.activateTab(tab.id)} onDoubleClick={() => setRenamingTabId(tab.id)} role="tab" title={`${titleOf(tab)} · ${statusLabel(tab.status)}\n${t("tabs.renameHint")}, ${t("drag.hint")}`} type="button" {...tabDrag.tabHandlers(tab.id)}>
                     <span className={`tab-status-dot status-${tab.status}`} />
+                    {tab.broadcast && <span aria-label={t("broadcast.badge", { count: tab.panes.length })} className="tab-broadcast-mark" title={t("broadcast.badge", { count: tab.panes.length })}>⇶</span>}
                     <span className="terminal-tab-title">{titleOf(tab)}</span>
                   </button>
                 )}
@@ -629,6 +630,7 @@ export default function TabsApp() {
           onCloseTab={() => { setTabMenu(null); void terminalStore.closeTab(menuTab.id); }}
           onColor={(color) => terminalStore.setTabColor(menuTab.id, color)}
           onRename={() => { setTabMenu(null); setRenamingTabId(menuTab.id); }}
+          onBroadcast={() => { setTabMenu(null); terminalStore.toggleBroadcast(menuTab.id); }}
           onSession={() => {
             setTabMenu(null);
             const running = menuTab.status === "connected" || menuTab.status === "connecting";

@@ -74,7 +74,7 @@ export default function SplitView({ tab, paneTitle, statusLabel }: SplitViewProp
   }
 
   return (
-    <div className={`terminal-split${split ? ` terminal-split-${split}` : ""}`} data-split-tab={tab.id} ref={containerRef}>
+    <div className={`terminal-split${split ? ` terminal-split-${split}` : ""}${tab.broadcast ? " terminal-split-broadcast" : ""}`} data-split-tab={tab.id} ref={containerRef}>
       {tab.panes.map((pane, index) => {
         const active = split !== null && pane.id === tab.activePaneId;
         return (
@@ -119,6 +119,12 @@ export default function SplitView({ tab, paneTitle, statusLabel }: SplitViewProp
               )}
               <div className="terminal-body"><TerminalPane tabId={tab.id} paneId={pane.id} /></div>
               <PaneOverlay pane={pane} statusLabel={statusLabel} />
+              {tab.broadcast && (
+                <div className="pane-broadcast-badge" role="status">
+                  <span>⇶ {t("broadcast.badge", { count: tab.panes.length })}</span>
+                  <button onClick={() => terminalStore.toggleBroadcast(tab.id)} type="button">{t("broadcast.end")}</button>
+                </div>
+              )}
             </div>
           </Fragment>
         );

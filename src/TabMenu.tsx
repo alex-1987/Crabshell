@@ -12,6 +12,8 @@ type TabMenuProps = {
   x: number;
   y: number;
   onRename: () => void;
+  /** Typing into all panes on/off (split tabs only). */
+  onBroadcast: () => void;
   /** Disconnect a running session, or reconnect/restart an ended one. */
   onSession: () => void;
   onColor: (color: string) => void;
@@ -20,7 +22,7 @@ type TabMenuProps = {
 };
 
 /** Right-click menu of a tab: rename, disconnect/reconnect, tab color, close. */
-export default function TabMenu({ tab, x, y, onRename, onSession, onColor, onCloseTab, onClose }: TabMenuProps) {
+export default function TabMenu({ tab, x, y, onRename, onBroadcast, onSession, onColor, onCloseTab, onClose }: TabMenuProps) {
   // Arrow keys move between the menu entries, not into the color swatches.
   const { ref, position, handleMenuKey } = useFloatingMenu({ x, y, onClose, itemSelector: ".context-menu-item" });
   const designColor = designTabColorOf(tab.appearance);
@@ -32,6 +34,9 @@ export default function TabMenu({ tab, x, y, onRename, onSession, onColor, onClo
     <div aria-label={t("tabMenu.label")} className="context-menu tab-menu" onContextMenu={(event) => event.preventDefault()} onKeyDown={(event) => { if (!(event.target instanceof HTMLInputElement)) handleMenuKey(event); }} ref={ref} role="menu" style={position}>
       <button className="context-menu-item" onClick={onRename} role="menuitem" type="button">{t("tabMenu.rename")}</button>
       <button className="context-menu-item" disabled={tab.status === "disconnecting"} onClick={onSession} role="menuitem" type="button">{sessionLabel}</button>
+      {tab.panes.length > 1 && (
+        <button className="context-menu-item" onClick={onBroadcast} role="menuitem" type="button">{tab.broadcast ? t("broadcast.stop") : t("broadcast.start")}</button>
+      )}
 
       <div className="split-menu-title split-menu-section context-menu-separated">{t("tabMenu.color")}</div>
       <div className="tab-menu-colors">

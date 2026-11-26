@@ -92,12 +92,27 @@ function withActivePane(tab: TerminalTab): TerminalTab {
     status: active.status,
     notice: active.notice,
     appearance: active.appearance,
+    // Broadcast needs a second pane; closing or detaching one ends it.
+    broadcast: tab.broadcast && tab.panes.length > 1,
   };
+}
+
+/**
+ * Answers the terminal sends on its own (cursor position, device attributes, focus and mouse
+ * reports, OSC/DCS replies). They belong to the pane that was asked, never to a broadcast.
+ */
+function isTerminalReport(data: string): boolean {
+  return /^\x1b\[[?>]?[\d;]*[Rcn]$/.test(data)
+    || /^\x1b\[[IO]$/.test(data)
+    || /^\x1b\[<[\d;]+[Mm]$/.test(data)
+    || data.startsWith("\x1b[M")
+    || data.startsWith("\x1b]")
+    || data.startsWith("\x1bP");
 }
 
 /** A new tab around one pane, without a custom name, color or zoom. */
 function newTab(id: string, pane: TerminalPaneState): TerminalTab {
-  return withActivePane({ ...pane, id, panes: [pane], split: null, splitRatio: 0.5, activePaneId: pane.id, customTitle: "", customColor: "", fontZoom: 0 });
+  return withActivePane({ ...pane, id, panes: [pane], split: null, splitRatio: 0.5, activePaneId: pane.id, customTitle: "", customColor: "", fontZoom: 0, broadcast: false });
 }
 
 class TerminalStore {
@@ -200,7 +215,7 @@ class TerminalStore {
     if (focus) this.runtimes.get(menu.paneId)?.terminal.focus();
   }
 
-  runContextAction(action: "copy" | "paste" | "selectAll" | "snippets" | "splitRow" | "splitColumn" | "closePane"): void {
+  runContextAction(action: "copy" | "paste" | "selectAll" | "snippets" | "saveOutput" | "broadcast" | "splitRow" | "splitColumn" | "closePane"): void {
     const menu = this.contextMenu;
     if (!menu) return;
     const keepsFocus = action === "copy" || action === "paste" || action === "selectAll";
@@ -213,7 +228,45 @@ class TerminalStore {
     else if (action === "selectAll") runtime.terminal.selectAll();
     else if (action === "splitRow" || action === "splitColumn") this.requestSplit(action === "splitRow" ? "row" : "column", { x: menu.x, y: menu.y });
     else if (action === "closePane") void this.closePane(menu.paneId);
+    else if (action === "saveOutput") void this.saveOutput(menu.paneId);
+    else if (action === "broadcast") this.toggleBroadcast(runtime.tabId);
     else this.snippetShortcutHandler?.();
+  }
+
+  /**
+   * "Save output…": the pane's text (scrollback included, without colors) into a file the user
+   * picks. Rows that only wrap because of the terminal width are joined again. Full-screen
+   * programs (htop, vim) draw on a second screen; the shell output below them is saved.
+   */
+  async saveOutput(paneId: string): Promise<void> {
+    const runtime = this.runtimes.get(paneId);
+    const pane = this.paneState(paneId);
+    const tab = this.tabOf(paneId);
+    if (!runtime || !pane || !tab) return;
+    const buffer = runtime.terminal.buffer.normal;
+    const lines: string[] = [];
+    for (let row = 0; row < buffer.length; row += 1) {
+      const line = buffer.getLine(row);
+      if (!line) continue;
+      const text = line.translateToString(true);
+      if (line.isWrapped && lines.length) lines[lines.length - 1] += text;
+      else lines.push(text);
+    }
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+    const name = tab.customTitle || (pane.kind === "local" ? t("tabs.localShell") : pane.title) || "terminal";
+    try {
+      const saved = await invoke<string | null>("save_terminal_output", {
+        fileName: `${name}-${stamp}`,
+        title: t("menu.saveOutputTitle"),
+        text: `${lines.join("\n")}\n`,
+      });
+      if (saved) this.updatePane(paneId, { notice: t("notice.outputSaved", { path: saved }) });
+    } catch (error) {
+      this.updatePane(paneId, { notice: t("notice.outputSaveFailed", { error: translateBackend(error) }) });
+    }
   }
 
   private requestSplit(direction: SplitDirection, at: { x: number; y: number } | null): void {
@@ -263,8 +316,27 @@ class TerminalStore {
     // paste() applies bracketed paste mode and emits onData synchronously,
     // so the Enter below is queued after the pasted text.
     runtime.terminal.paste(text);
-    if (execute) this.sendInput(paneId, "\r");
+    if (execute) this.typeInput(paneId, "\r");
     runtime.terminal.focus();
+  }
+
+  /** Input from the user (keys, pastes, snippets): to every pane while the tab broadcasts. */
+  private typeInput(paneId: string, data: string): void {
+    const tab = this.tabOf(paneId);
+    if (!tab?.broadcast || isTerminalReport(data)) {
+      this.sendInput(paneId, data);
+      return;
+    }
+    for (const pane of tab.panes) this.sendInput(pane.id, data);
+  }
+
+  /** Switches typing into all panes of a split tab on or off. */
+  toggleBroadcast(tabId: string): void {
+    const tab = this.tabs.find((item) => item.id === tabId);
+    if (!tab || tab.panes.length < 2) return;
+    this.tabs = this.tabs.map((item) => item.id === tabId ? { ...item, broadcast: !item.broadcast } : item);
+    this.publish();
+    if (tabId === this.activeTabId) this.focusActiveTerminal();
   }
 
   /** Sends input to the pane's session the same way keystrokes are sent. */
@@ -728,7 +800,7 @@ class TerminalStore {
       }, 150);
     });
     terminal.onData((data) => {
-      if (this.runtimes.get(id) === runtime) this.sendInput(id, data);
+      if (this.runtimes.get(id) === runtime) this.typeInput(id, data);
     });
 
     return {
@@ -850,10 +922,12 @@ class TerminalStore {
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
+      const tab = this.tabs.find((item) => item.id === tabId);
       this.contextMenu = {
         tabId,
         paneId,
-        split: (this.tabs.find((tab) => tab.id === tabId)?.panes.length ?? 1) > 1,
+        split: (tab?.panes.length ?? 1) > 1,
+        broadcast: tab?.broadcast ?? false,
         x: event.clientX,
         y: event.clientY,
         hasSelection: terminal.hasSelection(),
@@ -1200,6 +1274,13 @@ class TerminalStore {
         this.focusPane(paneId);
         this.splitActiveTab(action === "splitRight" ? "row" : "column", { kind: "same" });
         return true;
+      case "broadcast": {
+        const tab = paneId ? this.tabOf(paneId) : undefined;
+        // Not split: let the program have the keys.
+        if (!tab || tab.panes.length < 2) return false;
+        this.toggleBroadcast(tab.id);
+        return true;
+      }
       case "otherPane": {
         const other = paneId ? this.tabOf(paneId)?.panes.find((pane) => pane.id !== paneId) : undefined;
         // Not split: let the program have the keys.

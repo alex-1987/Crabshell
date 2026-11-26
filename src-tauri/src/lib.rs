@@ -8,6 +8,7 @@ mod sessions;
 mod snippets;
 mod sshconfig;
 mod storage;
+mod transcript;
 
 use sessions::AppState;
 use tauri::Manager;
@@ -128,6 +129,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             sshconfig::ssh_config_hosts,
             browser::open_in_browser,
             browser::open_terminal_link,
+            transcript::save_terminal_output,
             save_servers,
             save_settings,
             snippets_list,

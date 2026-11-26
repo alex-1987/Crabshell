@@ -157,6 +157,8 @@ export type TerminalTab = {
   customColor: string;
   /** Ctrl+Plus / Ctrl+Minus zoom of the tab in font pixels (0 = the design's size). */
   fontZoom: number;
+  /** Typing goes to every pane of the split tab. Never saved; off once the tab has one pane. */
+  broadcast: boolean;
   // Mirrored from the active pane, so tab-level UI (title, status, reconnect) keeps working.
   kind: TabKind;
   title: string;
@@ -180,8 +182,10 @@ export type PendingPaste = {
 export type TerminalContextMenu = {
   tabId: string;
   paneId: string;
-  /** The tab has two panes (offers "close pane"). */
+  /** The tab has two panes (offers "close pane" and broadcast). */
   split: boolean;
+  /** The tab currently types into all panes. */
+  broadcast: boolean;
   x: number;
   y: number;
   hasSelection: boolean;
