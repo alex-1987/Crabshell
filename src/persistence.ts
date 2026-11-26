@@ -9,6 +9,8 @@ export type PersistentData = {
   session: SessionState;
   serversFileExists: boolean;
   settingsFileExists: boolean;
+  /** Data files that were unreadable or had invalid entries; the original is kept as `<name>.broken`. */
+  recoveredFiles: string[];
 };
 
 // Early versions kept servers and the sidebar layout in localStorage. They are migrated

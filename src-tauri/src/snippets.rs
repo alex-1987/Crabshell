@@ -3,15 +3,11 @@
 //! Snippet contents may contain sensitive commands, so they are never logged and never
 //! included in error messages.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use std::{fs, path::Path, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::storage::write_json_atomic;
+use crate::storage::{broken_path, write_json_atomic};
 
 pub(crate) const SNIPPETS_FILE: &str = "snippets.json";
 const MAX_SNIPPETS: usize = 1000;
@@ -118,12 +114,6 @@ fn load(path: &Path) -> Result<SnippetList, String> {
         snippets,
         recovered: false,
     })
-}
-
-fn broken_path(path: &Path) -> PathBuf {
-    let mut broken = path.to_path_buf();
-    broken.set_extension("json.broken");
-    broken
 }
 
 fn normalize(snippet: Snippet) -> Result<Snippet, String> {

@@ -111,6 +111,9 @@ export default function TabsApp() {
         applySettings(settings);
         clearLegacyStorage();
         setStorageError("");
+        if (data.recoveredFiles.length > 0) {
+          setSidebarNotice(t("notice.filesRecovered", { files: data.recoveredFiles.map((file) => `${file}.broken`).join(", ") }));
+        }
         if (settings.restoreTabs) restoreSession(data.session, servers);
         setSessionRestored(true);
       } catch (error) {

@@ -40,6 +40,7 @@ const en = {
   "notice.serverSaved": "Server saved.",
   "notice.serverRemoved": "Server removed.",
   "notice.loadFailed": "Local data could not be loaded: {error}",
+  "notice.filesRecovered": "Some saved data could not be read and was skipped. The original is kept as {files}.",
   "notice.saveServersFailed": "Server profiles could not be saved: {error}",
   "notice.saveSettingsFailed": "Settings could not be saved: {error}",
   "notice.filePickerFailed": "File selection failed: {error}",
@@ -485,6 +486,7 @@ const de: Record<MessageKey, string> = {
   "notice.serverSaved": "Server gespeichert.",
   "notice.serverRemoved": "Server entfernt.",
   "notice.loadFailed": "Lokale Daten konnten nicht geladen werden: {error}",
+  "notice.filesRecovered": "Ein Teil der gespeicherten Daten war nicht lesbar und wurde übersprungen. Das Original liegt unter {files}.",
   "notice.saveServersFailed": "Serverprofile konnten nicht gespeichert werden: {error}",
   "notice.saveSettingsFailed": "Einstellungen konnten nicht gespeichert werden: {error}",
   "notice.filePickerFailed": "Dateiauswahl fehlgeschlagen: {error}",
@@ -973,6 +975,9 @@ const backendMessages: Partial<Record<Language, Record<string, string>>> = {
     "The snippet panel width is outside the supported range": "Die Breite der Snippet-Leiste liegt außerhalb des erlaubten Bereichs",
     "Unknown color scheme": "Unbekanntes Farbschema",
     "Unknown language": "Unbekannte Sprache",
+    "Invalid font name": "Ungültiger Schriftname",
+    "The sidebar width is outside the supported range": "Die Breite der Serverleiste liegt außerhalb des erlaubten Bereichs",
+    "This link cannot be opened": "Dieser Link kann nicht geöffnet werden",
   },
 };
 

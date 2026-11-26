@@ -161,6 +161,7 @@ fn normalize_keybindings(bindings: &mut BTreeMap<String, Vec<String>>) {
         combos.truncate(MAX_BINDINGS_PER_ACTION);
     }
 }
+
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 /// Width of the server sidebar and the snippet panel in px (same limits as usePanelLayout.ts).
 const PANEL_WIDTH_RANGE: std::ops::RangeInclusive<u16> = 180..=420;
@@ -200,6 +201,77 @@ impl Default for AppSettings {
         }
     }
 }
+
+/// One checked setting: loading resets an invalid value, saving rejects it with `error`.
+struct SettingRule {
+    valid: fn(&AppSettings) -> bool,
+    reset: fn(&mut AppSettings),
+    error: &'static str,
+}
+
+/// Every setting with a restricted value, except the appearances (see `normalize_appearances`).
+const SETTING_RULES: &[SettingRule] = &[
+    SettingRule {
+        valid: |settings| PANEL_WIDTH_RANGE.contains(&settings.sidebar_width),
+        reset: |settings| settings.sidebar_width = AppSettings::default().sidebar_width,
+        error: "The sidebar width is outside the supported range",
+    },
+    SettingRule {
+        valid: |settings| PANEL_WIDTH_RANGE.contains(&settings.snippet_panel_width),
+        reset: |settings| {
+            settings.snippet_panel_width = AppSettings::default().snippet_panel_width;
+        },
+        error: "The snippet panel width is outside the supported range",
+    },
+    SettingRule {
+        valid: |settings| THEME_MODES.contains(&settings.theme_mode.as_str()),
+        reset: |settings| settings.theme_mode = AppSettings::default().theme_mode,
+        error: "Unknown color scheme",
+    },
+    SettingRule {
+        valid: |settings| LANGUAGES.contains(&settings.language.as_str()),
+        reset: |settings| settings.language = AppSettings::default().language,
+        error: "Unknown language",
+    },
+    SettingRule {
+        valid: |settings| CLIPBOARD_READ_MODES.contains(&settings.clipboard_read.as_str()),
+        reset: |settings| settings.clipboard_read = AppSettings::default().clipboard_read,
+        error: "Unknown clipboard access mode",
+    },
+    SettingRule {
+        valid: |settings| CLICK_MODES.contains(&settings.server_open_click.as_str()),
+        reset: |settings| settings.server_open_click = AppSettings::default().server_open_click,
+        error: "Unknown click mode",
+    },
+    SettingRule {
+        valid: |settings| CLICK_MODES.contains(&settings.snippet_insert_click.as_str()),
+        reset: |settings| {
+            settings.snippet_insert_click = AppSettings::default().snippet_insert_click;
+        },
+        error: "Unknown click mode",
+    },
+    SettingRule {
+        valid: |settings| valid_keybindings(&settings.keybindings),
+        reset: |settings| normalize_keybindings(&mut settings.keybindings),
+        error: "Invalid keyboard shortcut",
+    },
+    SettingRule {
+        valid: |settings| UI_SCALE_RANGE.contains(&settings.ui_scale),
+        reset: |settings| settings.ui_scale = AppSettings::default().ui_scale,
+        error: "The UI scale is outside the supported range",
+    },
+    SettingRule {
+        valid: |settings| valid_font(&settings.ui_font) && valid_font(&settings.terminal_font),
+        reset: |settings| {
+            for font in [&mut settings.ui_font, &mut settings.terminal_font] {
+                if !valid_font(font) {
+                    font.clear();
+                }
+            }
+        },
+        error: "Invalid font name",
+    },
+];
 
 /// One tab of the last run: a local shell or a saved server (by id, never connection details).
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -273,6 +345,9 @@ pub(crate) struct AppData {
     pub session: SessionState,
     pub servers_file_exists: bool,
     pub settings_file_exists: bool,
+    /// Data files that were unreadable or had invalid entries; a copy is kept as
+    /// `<name>.json.broken` and the app continues with what could be read.
+    pub recovered_files: Vec<String>,
 }
 
 pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
@@ -281,40 +356,30 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
     let settings_path = config_dir.join(SETTINGS_FILE);
     let servers_file_exists = servers_path.exists();
     let settings_file_exists = settings_path.exists();
+    let mut recovered_files = Vec::new();
 
-    let servers = read_json::<Vec<ServerProfile>>(&servers_path)?.unwrap_or_default();
-    let mut settings = read_json::<AppSettings>(&settings_path)?.unwrap_or_default();
-    if !PANEL_WIDTH_RANGE.contains(&settings.sidebar_width) {
-        settings.sidebar_width = AppSettings::default().sidebar_width;
+    // Entries that saving would reject are dropped here, otherwise every later save fails.
+    let mut servers =
+        read_json_or_recover::<Vec<ServerProfile>>(&servers_path, &mut recovered_files)?
+            .unwrap_or_default();
+    let server_count = servers.len();
+    servers.retain(valid_server);
+    servers.truncate(MAX_SAVED_SERVERS);
+    if servers.len() != server_count {
+        keep_copy(&servers_path, &mut recovered_files);
     }
-    if !PANEL_WIDTH_RANGE.contains(&settings.snippet_panel_width) {
-        settings.snippet_panel_width = AppSettings::default().snippet_panel_width;
-    }
-    normalize_appearances(&mut settings);
-    if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
-        settings.theme_mode = AppSettings::default().theme_mode;
-    }
-    if !LANGUAGES.contains(&settings.language.as_str()) {
-        settings.language = AppSettings::default().language;
-    }
-    if !CLIPBOARD_READ_MODES.contains(&settings.clipboard_read.as_str()) {
-        settings.clipboard_read = AppSettings::default().clipboard_read;
-    }
-    if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
-        settings.ui_scale = AppSettings::default().ui_scale;
-    }
-    for font in [&mut settings.ui_font, &mut settings.terminal_font] {
-        if !valid_font(font) {
-            font.clear();
+
+    let mut settings = read_json_or_recover::<AppSettings>(&settings_path, &mut recovered_files)?
+        .unwrap_or_default();
+    for rule in SETTING_RULES {
+        if !(rule.valid)(&settings) {
+            (rule.reset)(&mut settings);
         }
     }
-    if !CLICK_MODES.contains(&settings.server_open_click.as_str()) {
-        settings.server_open_click = AppSettings::default().server_open_click;
+    if normalize_appearances(&mut settings) {
+        keep_copy(&settings_path, &mut recovered_files);
     }
-    if !CLICK_MODES.contains(&settings.snippet_insert_click.as_str()) {
-        settings.snippet_insert_click = AppSettings::default().snippet_insert_click;
-    }
-    normalize_keybindings(&mut settings.keybindings);
+
     // A missing or broken session file just means "nothing to restore".
     let session = read_json::<SessionState>(&config_dir.join(SESSION_FILE))
         .ok()
@@ -328,6 +393,7 @@ pub(crate) fn load_app_data(app: &AppHandle) -> Result<AppData, String> {
         session,
         servers_file_exists,
         settings_file_exists,
+        recovered_files,
     })
 }
 
@@ -337,65 +403,60 @@ pub(crate) fn save_servers(app: &AppHandle, servers: &[ServerProfile]) -> Result
 }
 
 pub(crate) fn save_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
-    if !PANEL_WIDTH_RANGE.contains(&settings.sidebar_width) {
-        return Err("The sidebar width is outside the supported range".to_string());
-    }
-    if !PANEL_WIDTH_RANGE.contains(&settings.snippet_panel_width) {
-        return Err("The snippet panel width is outside the supported range".to_string());
-    }
-    if !THEME_MODES.contains(&settings.theme_mode.as_str()) {
-        return Err("Unknown color scheme".to_string());
-    }
-    if !LANGUAGES.contains(&settings.language.as_str()) {
-        return Err("Unknown language".to_string());
-    }
-    if !CLIPBOARD_READ_MODES.contains(&settings.clipboard_read.as_str()) {
-        return Err("Unknown clipboard access mode".to_string());
-    }
-    if !CLICK_MODES.contains(&settings.server_open_click.as_str())
-        || !CLICK_MODES.contains(&settings.snippet_insert_click.as_str())
-    {
-        return Err("Unknown click mode".to_string());
-    }
-    if !valid_keybindings(&settings.keybindings) {
-        return Err("Invalid keyboard shortcut".to_string());
-    }
-    if !UI_SCALE_RANGE.contains(&settings.ui_scale) {
-        return Err("The UI scale is outside the supported range".to_string());
-    }
-    if !valid_font(&settings.ui_font) || !valid_font(&settings.terminal_font) {
-        return Err("Invalid font name".to_string());
+    if let Some(rule) = SETTING_RULES.iter().find(|rule| !(rule.valid)(settings)) {
+        return Err(rule.error.to_string());
     }
     validate_appearances(settings)?;
     write_json(app, SETTINGS_FILE, settings)
 }
 
-/// Older settings files have no appearances; make sure the built-in default always exists
-/// and the default id points at an existing appearance.
-fn normalize_appearances(settings: &mut AppSettings) {
-    if !settings
+/// Drops invalid or duplicate appearances (hand-edited files), makes sure the built-in default
+/// exists (older files) and that the default and local ids point at existing appearances.
+/// Returns true when appearances had to be dropped.
+fn normalize_appearances(settings: &mut AppSettings) -> bool {
+    let count = settings.appearances.len();
+    let mut ids = std::collections::HashSet::new();
+    settings
         .appearances
-        .iter()
-        .any(|appearance| appearance.id == DEFAULT_APPEARANCE_ID)
-    {
+        .retain(|appearance| valid_appearance(appearance) && ids.insert(appearance.id.clone()));
+    settings.appearances.truncate(MAX_APPEARANCES);
+    let dropped = settings.appearances.len() != count;
+
+    if !ids.contains(DEFAULT_APPEARANCE_ID) {
+        settings.appearances.truncate(MAX_APPEARANCES - 1);
         settings
             .appearances
             .insert(0, Appearance::builtin_default());
     }
-    if !settings
-        .appearances
-        .iter()
-        .any(|appearance| appearance.id == settings.default_appearance_id)
-    {
+    let exists = |id: &str| {
+        settings
+            .appearances
+            .iter()
+            .any(|appearance| appearance.id == id)
+    };
+    if !exists(&settings.default_appearance_id) {
         settings.default_appearance_id = DEFAULT_APPEARANCE_ID.to_string();
     }
-    if !settings
-        .appearances
-        .iter()
-        .any(|appearance| appearance.id == settings.local_appearance_id)
-    {
+    if !exists(&settings.local_appearance_id) {
         settings.local_appearance_id.clear();
     }
+    dropped
+}
+
+fn valid_appearance(appearance: &Appearance) -> bool {
+    let colors = [
+        &appearance.foreground,
+        &appearance.background,
+        &appearance.cursor,
+        &appearance.selection,
+        &appearance.tab_color,
+    ];
+    !appearance.id.is_empty()
+        && appearance.id.len() <= 64
+        && !appearance.name.trim().is_empty()
+        && appearance.name.len() <= 64
+        && (8..=32).contains(&appearance.font_size)
+        && colors.iter().all(|color| is_hex_color(color))
 }
 
 fn validate_appearances(settings: &AppSettings) -> Result<(), String> {
@@ -404,21 +465,7 @@ fn validate_appearances(settings: &AppSettings) -> Result<(), String> {
     }
     let mut ids = std::collections::HashSet::new();
     for appearance in &settings.appearances {
-        let colors = [
-            &appearance.foreground,
-            &appearance.background,
-            &appearance.cursor,
-            &appearance.selection,
-            &appearance.tab_color,
-        ];
-        if appearance.id.is_empty()
-            || appearance.id.len() > 64
-            || !ids.insert(appearance.id.as_str())
-            || appearance.name.trim().is_empty()
-            || appearance.name.len() > 64
-            || !(8..=32).contains(&appearance.font_size)
-            || !colors.iter().all(|color| is_hex_color(color))
-        {
+        if !valid_appearance(appearance) || !ids.insert(appearance.id.as_str()) {
             return Err("An appearance contains invalid fields".to_string());
         }
     }
@@ -439,28 +486,27 @@ fn is_hex_color(value: &str) -> bool {
         && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+fn valid_server(server: &ServerProfile) -> bool {
+    !server.id.is_empty()
+        && server.id.len() <= 64
+        && !server.host.trim().is_empty()
+        && server.host.len() <= 255
+        && server.port != 0
+        && server.label.len() <= 128
+        && server.username.len() <= 64
+        && server.identity_file.len() <= 4096
+        && server.appearance_id.len() <= 64
+        && server.category.chars().count() <= MAX_CATEGORY_CHARS
+        && server.category.trim() == server.category
+}
+
 fn validate_servers(servers: &[ServerProfile]) -> Result<(), String> {
     if servers.len() > MAX_SAVED_SERVERS {
         return Err("Too many saved server profiles".to_string());
     }
-
-    for server in servers {
-        if server.id.is_empty()
-            || server.id.len() > 64
-            || server.host.trim().is_empty()
-            || server.host.len() > 255
-            || server.port == 0
-            || server.label.len() > 128
-            || server.username.len() > 64
-            || server.identity_file.len() > 4096
-            || server.appearance_id.len() > 64
-            || server.category.chars().count() > MAX_CATEGORY_CHARS
-            || server.category.trim() != server.category
-        {
-            return Err("A saved server profile contains invalid fields".to_string());
-        }
+    if !servers.iter().all(valid_server) {
+        return Err("A saved server profile contains invalid fields".to_string());
     }
-
     Ok(())
 }
 
@@ -470,14 +516,62 @@ pub(crate) fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|_| "Could not locate the application config directory".to_string())
 }
 
+const READ_FAILED: &str = "Could not read a local Crabshell data file";
+
 fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
-    match fs::read(path) {
-        Ok(contents) => serde_json::from_slice(&contents)
-            .map(Some)
-            .map_err(|_| "A local Crabshell data file contains invalid JSON".to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err("Could not read a local Crabshell data file".to_string()),
+    let Some(contents) = read_file(path)? else {
+        return Ok(None);
+    };
+    serde_json::from_slice(&contents)
+        .map(Some)
+        .map_err(|_| "A local Crabshell data file contains invalid JSON".to_string())
+}
+
+/// Like `read_json`, but unreadable JSON is moved aside (see `broken_path`) instead of failing,
+/// so the app still starts; the file name is added to `recovered`.
+fn read_json_or_recover<T: DeserializeOwned>(
+    path: &Path,
+    recovered: &mut Vec<String>,
+) -> Result<Option<T>, String> {
+    let Some(contents) = read_file(path)? else {
+        return Ok(None);
+    };
+    match serde_json::from_slice(&contents) {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => {
+            let _ = fs::rename(path, broken_path(path));
+            record_recovered(path, recovered);
+            Ok(None)
+        }
     }
+}
+
+/// None when the file does not exist.
+fn read_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    match fs::read(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(READ_FAILED.to_string()),
+    }
+}
+
+/// Keeps the original next to the data file before entries from it are dropped.
+fn keep_copy(path: &Path, recovered: &mut Vec<String>) {
+    let _ = fs::copy(path, broken_path(path));
+    record_recovered(path, recovered);
+}
+
+fn record_recovered(path: &Path, recovered: &mut Vec<String>) {
+    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+        recovered.push(name.to_string());
+    }
+}
+
+/// `servers.json` → `servers.json.broken`: where an unusable data file is kept for the user.
+pub(crate) fn broken_path(path: &Path) -> PathBuf {
+    let mut broken = path.to_path_buf();
+    broken.set_extension("json.broken");
+    broken
 }
 
 fn write_json<T: Serialize + ?Sized>(
@@ -518,11 +612,11 @@ fn temporary_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_hex_color, normalize_appearances, normalize_session, temporary_path,
-        validate_appearances, validate_servers, AppSettings, Appearance, ServerProfile,
-        SessionState, SessionTab, DEFAULT_APPEARANCE_ID,
+        broken_path, is_hex_color, normalize_appearances, normalize_session, read_json_or_recover,
+        temporary_path, validate_appearances, validate_servers, AppSettings, Appearance,
+        ServerProfile, SessionState, SessionTab, DEFAULT_APPEARANCE_ID, SETTING_RULES,
     };
-    use std::path::Path;
+    use std::{fs, path::Path};
 
     #[test]
     fn settings_default_to_a_visible_sidebar() {
@@ -626,6 +720,80 @@ mod tests {
             ..AppSettings::default()
         };
         assert!(validate_appearances(&settings).is_err());
+    }
+
+    #[test]
+    fn loading_drops_appearances_that_saving_would_reject() {
+        let mut settings = AppSettings::default();
+        let custom = Appearance {
+            id: "custom".to_string(),
+            ..settings.appearances[0].clone()
+        };
+        settings.appearances.push(Appearance {
+            id: "bad".to_string(),
+            foreground: "red".to_string(),
+            ..custom.clone()
+        });
+        settings.appearances.push(custom.clone());
+        settings.appearances.push(custom);
+        settings.default_appearance_id = "bad".to_string();
+
+        assert!(normalize_appearances(&mut settings));
+        let ids: Vec<&str> = settings.appearances.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, [DEFAULT_APPEARANCE_ID, "custom"]);
+        assert_eq!(settings.default_appearance_id, DEFAULT_APPEARANCE_ID);
+        assert!(validate_appearances(&settings).is_ok());
+        assert!(
+            !normalize_appearances(&mut settings),
+            "nothing left to drop"
+        );
+    }
+
+    #[test]
+    fn setting_rules_reset_what_saving_rejects() {
+        let defaults = AppSettings::default();
+        assert!(SETTING_RULES.iter().all(|rule| (rule.valid)(&defaults)));
+
+        let mut settings: AppSettings = serde_json::from_str(
+            r#"{"sidebarWidth":5,"themeMode":"neon","uiScale":999,"uiFont":" x",
+                "keybindings":{"copy":["Ctrl+Shift+C"],"nope":["X"]}}"#,
+        )
+        .unwrap();
+        assert!(SETTING_RULES.iter().any(|rule| !(rule.valid)(&settings)));
+        for rule in SETTING_RULES {
+            if !(rule.valid)(&settings) {
+                (rule.reset)(&mut settings);
+            }
+        }
+        assert!(SETTING_RULES.iter().all(|rule| (rule.valid)(&settings)));
+        assert_eq!(settings.sidebar_width, defaults.sidebar_width);
+        assert_eq!(settings.theme_mode, defaults.theme_mode);
+        assert!(settings.ui_font.is_empty());
+        assert_eq!(settings.keybindings.len(), 1);
+    }
+
+    #[test]
+    fn broken_data_files_are_moved_aside() {
+        let dir = std::env::temp_dir().join(format!("crabshell-storage-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("servers.json");
+        fs::write(&path, b"[{ not json").unwrap();
+
+        let mut recovered = Vec::new();
+        let servers = read_json_or_recover::<Vec<ServerProfile>>(&path, &mut recovered).unwrap();
+        assert!(servers.is_none());
+        assert_eq!(recovered, ["servers.json"]);
+        assert!(!path.exists());
+        assert_eq!(fs::read(broken_path(&path)).unwrap(), b"[{ not json");
+
+        let mut recovered = Vec::new();
+        assert!(
+            read_json_or_recover::<Vec<ServerProfile>>(&path, &mut recovered)
+                .unwrap()
+                .is_none()
+        );
+        assert!(recovered.is_empty(), "a missing file is not a recovery");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

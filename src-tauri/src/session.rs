@@ -1,25 +1,32 @@
 use std::{
     io::{Read, Write},
     path::Path,
+    sync::Mutex,
 };
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 
 /// A running interactive terminal process (SSH or local shell).
-pub(crate) trait TerminalSession: Send {
-    fn write(&mut self, data: &[u8]) -> Result<(), String>;
+///
+/// The methods take `&self` and lock only what they need, so `close` can stop the process
+/// while a `write` is blocked on a program that no longer reads its input.
+pub(crate) trait TerminalSession: Send + Sync {
+    fn write(&self, data: &[u8]) -> Result<(), String>;
     fn resize(&self, cols: u16, rows: u16) -> Result<(), String>;
-    fn close(&mut self) -> Result<(), String>;
+    fn close(&self) -> Result<(), String>;
 }
 
 pub(crate) type SessionReader = Box<dyn Read + Send>;
 
 /// A process running inside a pseudo terminal.
 pub(crate) struct PtySession {
-    writer: Option<Box<dyn Write + Send>>,
-    master: Option<Box<dyn MasterPty + Send>>,
-    child: Option<Box<dyn Child + Send + Sync>>,
+    writer: Mutex<Option<Box<dyn Write + Send>>>,
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    child: Mutex<Option<Box<dyn Child + Send + Sync>>>,
 }
+
+const SESSION_CLOSED: &str = "The session is closed";
+const SESSION_UNAVAILABLE: &str = "The session is unavailable";
 
 impl PtySession {
     /// Starts OpenSSH for a saved host.
@@ -90,9 +97,9 @@ impl PtySession {
 
         Ok((
             Self {
-                writer: Some(writer),
-                master: Some(pair.master),
-                child: Some(child),
+                writer: Mutex::new(Some(writer)),
+                master: Mutex::new(Some(pair.master)),
+                child: Mutex::new(Some(child)),
             },
             reader,
         ))
@@ -100,14 +107,15 @@ impl PtySession {
 }
 
 impl TerminalSession for PtySession {
-    fn write(&mut self, data: &[u8]) -> Result<(), String> {
-        let writer = self
+    fn write(&self, data: &[u8]) -> Result<(), String> {
+        let mut writer = self
             .writer
-            .as_mut()
-            .ok_or_else(|| "The session is closed".to_string())?;
+            .lock()
+            .map_err(|_| SESSION_UNAVAILABLE.to_string())?;
+        let writer = writer.as_mut().ok_or_else(|| SESSION_CLOSED.to_string())?;
         writer
             .write_all(data)
-            .and_then(|_| writer.flush())
+            .and_then(|()| writer.flush())
             .map_err(|_| "Could not write to the terminal".to_string())
     }
 
@@ -115,9 +123,11 @@ impl TerminalSession for PtySession {
         validate_size(cols, rows)?;
         let master = self
             .master
-            .as_ref()
-            .ok_or_else(|| "The session is closed".to_string())?;
+            .lock()
+            .map_err(|_| SESSION_UNAVAILABLE.to_string())?;
         master
+            .as_ref()
+            .ok_or_else(|| SESSION_CLOSED.to_string())?
             .resize(PtySize {
                 rows,
                 cols,
@@ -127,11 +137,19 @@ impl TerminalSession for PtySession {
             .map_err(|_| "Could not resize the terminal".to_string())
     }
 
-    fn close(&mut self) -> Result<(), String> {
-        self.writer.take();
+    fn close(&self) -> Result<(), String> {
+        // A write blocked on a full PTY holds the writer lock; it fails once the process is
+        // gone, and the writer is then dropped together with the session.
+        if let Ok(mut writer) = self.writer.try_lock() {
+            writer.take();
+        }
         let mut close_error = None;
 
-        if let Some(child) = self.child.as_mut() {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| SESSION_UNAVAILABLE.to_string())?;
+        if let Some(child) = child.as_mut() {
             let should_wait = match child.try_wait() {
                 Ok(Some(_)) => true,
                 Ok(None) => match child.kill() {
@@ -150,9 +168,12 @@ impl TerminalSession for PtySession {
                 close_error = Some("Could not stop the session process".to_string());
             }
         }
+        child.take();
+        drop(child);
 
-        self.child.take();
-        self.master.take();
+        if let Ok(mut master) = self.master.lock() {
+            master.take();
+        }
         close_error.map_or(Ok(()), Err)
     }
 }
@@ -294,6 +315,14 @@ mod tests {
         validate_session_id, validate_size, validate_username,
     };
 
+    fn argv(command: &portable_pty::CommandBuilder) -> Vec<String> {
+        command
+            .get_argv()
+            .iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect()
+    }
+
     #[test]
     fn accepts_common_hosts_and_config_aliases() {
         assert!(validate_host("build-box.example.net").is_ok());
@@ -318,11 +347,7 @@ mod tests {
     #[test]
     fn builds_ssh_arguments_without_shell_interpolation() {
         let command = ssh_command("node-a", Some(22), Some("admin"), None);
-        let arguments: Vec<String> = command
-            .get_argv()
-            .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect();
+        let arguments = argv(&command);
         assert_eq!(
             arguments,
             vec![
@@ -339,11 +364,7 @@ mod tests {
     #[test]
     fn passes_non_default_ports_only() {
         let command = ssh_command("node-a", Some(2222), None, None);
-        let arguments: Vec<String> = command
-            .get_argv()
-            .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect();
+        let arguments = argv(&command);
         assert_eq!(arguments, vec!["ssh", "-tt", "-p", "2222", "--", "node-a"]);
     }
 
@@ -351,11 +372,7 @@ mod tests {
     fn passes_selected_identity_as_a_single_argument() {
         let identity_file = "/home/alex/ssh keys/id_ed25519";
         let command = ssh_command("node-a", None, Some("admin"), Some(identity_file));
-        let arguments: Vec<String> = command
-            .get_argv()
-            .iter()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect();
+        let arguments = argv(&command);
         assert_eq!(
             arguments,
             vec![
@@ -391,7 +408,7 @@ mod tests {
         use super::{PtySession, TerminalSession};
         use std::io::Read;
 
-        let (mut session, mut reader) = PtySession::open_local_shell(80, 24).unwrap();
+        let (session, mut reader) = PtySession::open_local_shell(80, 24).unwrap();
         session.write(b"echo crab42\r").unwrap();
         let mut output = Vec::new();
         let mut buffer = [0_u8; 4096];

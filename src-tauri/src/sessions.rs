@@ -16,15 +16,36 @@ use tauri::{ipc::InvokeResponseBody, Manager};
 
 use crate::session::{validate_session_id, PtySession, SessionReader, TerminalSession};
 
+type SharedSession = Arc<dyn TerminalSession>;
+
 #[derive(Default)]
 pub(crate) struct AppState {
     sessions: Mutex<HashMap<String, SessionEntry>>,
 }
 
 struct SessionEntry {
-    session: Arc<Mutex<Box<dyn TerminalSession>>>,
+    session: SharedSession,
     on_state: tauri::ipc::Channel<SessionEvent>,
+    /// Set once the session is being closed, so the reader thread does not report it again.
     stopping: Arc<AtomicBool>,
+}
+
+impl SessionEntry {
+    /// Ends the process and reports the result to the frontend.
+    fn shut_down(&self, message: &str) -> Result<(), String> {
+        self.stopping.store(true, Ordering::Release);
+        let result = self.session.close();
+        let event = match &result {
+            Ok(()) => SessionEvent::Disconnected {
+                message: message.to_string(),
+            },
+            Err(error) => SessionEvent::Failed {
+                message: error.clone(),
+            },
+        };
+        let _ = self.on_state.send(event);
+        result
+    }
 }
 
 #[derive(Deserialize)]
@@ -56,33 +77,38 @@ pub(crate) enum SessionEvent {
     Failed { message: String },
 }
 
-impl AppState {
-    pub(crate) fn close_all(&self) {
-        let sessions = match self.sessions.lock() {
-            Ok(mut sessions) => std::mem::take(&mut *sessions),
-            Err(_) => return,
-        };
+const MANAGER_UNAVAILABLE: &str = "The session manager is unavailable";
+const ALREADY_OPEN: &str = "This session is already open";
+/// Upper limit per `write_to_session` call; the frontend sends chunks of half this size.
+const MAX_WRITE_BYTES: usize = 64 * 1024;
 
-        for (_, entry) in sessions {
-            entry.stopping.store(true, Ordering::Release);
-            let close_result = close_entry_session(&entry);
-            let event = match close_result {
-                Ok(()) => SessionEvent::Disconnected {
-                    message: "Application closed".to_string(),
-                },
-                Err(message) => SessionEvent::Failed { message },
-            };
-            let _ = entry.on_state.send(event);
+impl AppState {
+    fn sessions(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, SessionEntry>>, String> {
+        self.sessions
+            .lock()
+            .map_err(|_| MANAGER_UNAVAILABLE.to_string())
+    }
+
+    /// The session's handle, cloned so the map lock is released before it is used.
+    fn session(&self, session_id: &str) -> Result<SharedSession, String> {
+        validate_session_id(session_id)?;
+        self.sessions()?
+            .get(session_id)
+            .map(|entry| Arc::clone(&entry.session))
+            .ok_or_else(|| "The session is not open".to_string())
+    }
+
+    pub(crate) fn close_all(&self) {
+        let Ok(sessions) = self
+            .sessions()
+            .map(|mut sessions| std::mem::take(&mut *sessions))
+        else {
+            return;
+        };
+        for entry in sessions.into_values() {
+            let _ = entry.shut_down("Application closed");
         }
     }
-}
-
-fn close_entry_session(entry: &SessionEntry) -> Result<(), String> {
-    let mut session = entry
-        .session
-        .lock()
-        .map_err(|_| "The session is unavailable".to_string())?;
-    session.close()
 }
 
 #[tauri::command]
@@ -144,14 +170,9 @@ fn start_session(
         .send(SessionEvent::Connecting)
         .map_err(|_| "The terminal view is unavailable".to_string())?;
 
-    {
-        let sessions = state
-            .sessions
-            .lock()
-            .map_err(|_| "The session manager is unavailable".to_string())?;
-        if sessions.contains_key(&session_id) {
-            return Err("This session is already open".to_string());
-        }
+    // Checked before spawning, so a duplicate id never starts a process.
+    if state.sessions()?.contains_key(&session_id) {
+        return Err(ALREADY_OPEN.to_string());
     }
 
     let (session, mut reader) = match spawn() {
@@ -164,33 +185,29 @@ fn start_session(
         }
     };
 
-    let session: Arc<Mutex<Box<dyn TerminalSession>>> = Arc::new(Mutex::new(Box::new(session)));
+    let session: SharedSession = Arc::new(session);
     let stopping = Arc::new(AtomicBool::new(false));
-    let entry = SessionEntry {
-        session: Arc::clone(&session),
-        on_state: on_state.clone(),
-        stopping: Arc::clone(&stopping),
-    };
-
-    let inserted = {
-        let mut sessions = state
-            .sessions
-            .lock()
-            .map_err(|_| "The session manager is unavailable".to_string())?;
+    {
+        let mut sessions = match state.sessions() {
+            Ok(sessions) => sessions,
+            Err(message) => {
+                let _ = session.close();
+                return Err(message);
+            }
+        };
         if sessions.contains_key(&session_id) {
-            false
-        } else {
-            sessions.insert(session_id.clone(), entry);
-            true
+            drop(sessions);
+            let _ = session.close();
+            return Err(ALREADY_OPEN.to_string());
         }
-    };
-    if !inserted {
-        let _ = close_entry_session(&SessionEntry {
-            session: Arc::clone(&session),
-            on_state: on_state.clone(),
-            stopping: Arc::clone(&stopping),
-        });
-        return Err("This session is already open".to_string());
+        sessions.insert(
+            session_id.clone(),
+            SessionEntry {
+                session: Arc::clone(&session),
+                on_state: on_state.clone(),
+                stopping: Arc::clone(&stopping),
+            },
+        );
     }
 
     let _ = on_state.send(SessionEvent::Connected);
@@ -201,26 +218,25 @@ fn start_session(
     let worker_stopping = Arc::clone(&stopping);
     let worker_state = on_state.clone();
 
-    if thread::Builder::new()
+    let spawned = thread::Builder::new()
         .name("crabshell-pty-reader".to_string())
         .spawn(move || {
             let mut buffer = [0_u8; 8192];
             let message = loop {
                 match reader.read(&mut buffer) {
-                    Ok(0) => break "The session ended".to_string(),
+                    Ok(0) => break "The session ended",
                     Ok(count) => {
                         if on_data
                             .send(InvokeResponseBody::Raw(buffer[..count].to_vec()))
                             .is_err()
                         {
-                            break "The terminal view is no longer available".to_string();
+                            break "The terminal view is no longer available";
                         }
                     }
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(_) => break "The terminal stream ended".to_string(),
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => break "The terminal stream ended",
                 }
             };
-
             finish_session(
                 &app_handle,
                 &worker_session_id,
@@ -229,57 +245,59 @@ fn start_session(
                 &worker_state,
                 message,
             );
-        })
-        .is_err()
-    {
+        });
+
+    if spawned.is_err() {
+        let entry = state
+            .sessions()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(&session_id));
+        let message = "Could not start the terminal reader";
         stopping.store(true, Ordering::Release);
-        if let Ok(mut sessions) = state.sessions.lock() {
-            sessions.remove(&session_id);
+        let _ = session.close();
+        if entry.is_some() {
+            let _ = on_state.send(SessionEvent::Failed {
+                message: message.to_string(),
+            });
         }
-        let message = "Could not start the terminal reader".to_string();
-        let _ = close_entry_session(&SessionEntry {
-            session,
-            on_state: on_state.clone(),
-            stopping,
-        });
-        let _ = on_state.send(SessionEvent::Failed {
-            message: message.clone(),
-        });
-        return Err(message);
+        return Err(message.to_string());
     }
 
     Ok(())
 }
 
+/// The process ended on its own (or its output could not be delivered): report it, then clean up.
 fn finish_session(
     app_handle: &tauri::AppHandle,
     session_id: &str,
-    session: &Arc<Mutex<Box<dyn TerminalSession>>>,
-    stopping: &AtomicBool,
+    session: &SharedSession,
+    stopping: &Arc<AtomicBool>,
     on_state: &tauri::ipc::Channel<SessionEvent>,
-    message: String,
+    message: &str,
 ) {
     if stopping.swap(true, Ordering::AcqRel) {
         return;
     }
 
-    let _ = on_state.send(SessionEvent::Disconnected { message });
-    if let Ok(mut sessions) = app_handle.state::<AppState>().sessions.lock() {
+    let _ = on_state.send(SessionEvent::Disconnected {
+        message: message.to_string(),
+    });
+    if let Ok(mut sessions) = app_handle.state::<AppState>().sessions() {
+        // Only this run's entry; the id may already belong to a new session.
         let is_current = sessions
             .get(session_id)
-            .is_some_and(|entry| Arc::ptr_eq(&entry.session, session));
+            .is_some_and(|entry| Arc::ptr_eq(&entry.stopping, stopping));
         if is_current {
             sessions.remove(session_id);
         }
     }
-
-    if let Ok(mut session) = session.lock() {
-        let _ = session.close();
-    }
+    let _ = session.close();
 }
 
+/// Async with a blocking task: a write to a program that stops reading (e.g. a stalled SSH
+/// connection) blocks, and sync commands run on the main thread, which would freeze the window.
 #[tauri::command]
-pub(crate) fn write_to_session(
+pub(crate) async fn write_to_session(
     request: tauri::ipc::Request<'_>,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
@@ -288,33 +306,18 @@ pub(crate) fn write_to_session(
         .get("x-session-id")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| "Missing session identifier".to_string())?;
-    validate_session_id(session_id)?;
-
-    let data = match request.body() {
-        tauri::ipc::InvokeBody::Raw(data) => data,
-        tauri::ipc::InvokeBody::Json(_) => {
-            return Err("Terminal input must be sent as raw bytes".to_string());
-        }
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err("Terminal input must be sent as raw bytes".to_string());
     };
-    if data.len() > 65_536 {
+    if data.len() > MAX_WRITE_BYTES {
         return Err("Terminal input is too large".to_string());
     }
 
-    let session = {
-        let sessions = state
-            .sessions
-            .lock()
-            .map_err(|_| "The session manager is unavailable".to_string())?;
-        sessions
-            .get(session_id)
-            .map(|entry| Arc::clone(&entry.session))
-            .ok_or_else(|| "The session is not open".to_string())?
-    };
-
-    let mut session = session
-        .lock()
-        .map_err(|_| "The session is unavailable".to_string())?;
-    session.write(data)
+    let session = state.session(session_id)?;
+    let data = data.clone();
+    tauri::async_runtime::spawn_blocking(move || session.write(&data))
+        .await
+        .map_err(|_| "Could not write to the terminal".to_string())?
 }
 
 #[tauri::command]
@@ -324,22 +327,7 @@ pub(crate) fn resize_session(
     rows: u16,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    validate_session_id(&session_id)?;
-    let session = {
-        let sessions = state
-            .sessions
-            .lock()
-            .map_err(|_| "The session manager is unavailable".to_string())?;
-        sessions
-            .get(&session_id)
-            .map(|entry| Arc::clone(&entry.session))
-            .ok_or_else(|| "The session is not open".to_string())?
-    };
-
-    let session = session
-        .lock()
-        .map_err(|_| "The session is unavailable".to_string())?;
-    session.resize(cols, rows)
+    state.session(&session_id)?.resize(cols, rows)
 }
 
 #[tauri::command]
@@ -348,28 +336,6 @@ pub(crate) fn close_session(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     validate_session_id(&session_id)?;
-    let entry = {
-        let mut sessions = state
-            .sessions
-            .lock()
-            .map_err(|_| "The session manager is unavailable".to_string())?;
-        sessions.remove(&session_id)
-    };
-
-    if let Some(entry) = entry {
-        entry.stopping.store(true, Ordering::Release);
-        let close_result = close_entry_session(&entry);
-        let event = match &close_result {
-            Ok(()) => SessionEvent::Disconnected {
-                message: "Session closed".to_string(),
-            },
-            Err(message) => SessionEvent::Failed {
-                message: message.clone(),
-            },
-        };
-        let _ = entry.on_state.send(event);
-        close_result
-    } else {
-        Ok(())
-    }
+    let entry = state.sessions()?.remove(&session_id);
+    entry.map_or(Ok(()), |entry| entry.shut_down("Session closed"))
 }

@@ -15,7 +15,7 @@ fn allowed(url: &str) -> bool {
 #[tauri::command]
 pub fn open_in_browser(window: tauri::WebviewWindow, url: String) -> Result<(), String> {
     if !allowed(&url) {
-        return Err(format!("Refusing to open {url}"));
+        return Err("This link cannot be opened".to_string());
     }
     #[cfg(target_os = "linux")]
     {
