@@ -31,6 +31,8 @@ pub(crate) const CANCELLED: &str = "The transfer was cancelled";
 const LOST: &str = "The file connection was lost";
 
 type Pending = Arc<Mutex<HashMap<u32, Sender<Response>>>>;
+/// Gets each piece of a remote file with its offset.
+type Sink<'a> = dyn FnMut(u64, &[u8]) -> Result<(), String> + 'a;
 
 pub(crate) struct SftpClient {
     writer: Mutex<ChildStdin>,
@@ -329,7 +331,17 @@ impl SftpClient {
             .handle()?;
         let result = File::create(local)
             .map_err(|_| "Could not write the file".to_string())
-            .and_then(|mut file| self.read_into(&handle, size, &mut file, cancel, progress));
+            .and_then(|mut file| {
+                let write_error = |_| "Could not write the file".to_string();
+                let mut written = 0u64;
+                self.read_into(&handle, size, cancel, &mut |offset, data| {
+                    file.seek(SeekFrom::Start(offset)).map_err(write_error)?;
+                    file.write_all(data).map_err(write_error)?;
+                    written += data.len() as u64;
+                    progress(written);
+                    Ok(())
+                })
+            });
         let _ = self.request(|id| protocol::close(id, &handle));
         if result.is_err() {
             let _ = std::fs::remove_file(local);
@@ -337,19 +349,19 @@ impl SftpClient {
         result
     }
 
+    /// Reads an open remote file and hands each piece to `sink` with its offset (pieces can
+    /// arrive out of order when the server sends short reads).
     fn read_into(
         &self,
         handle: &[u8],
         size: Option<u64>,
-        file: &mut File,
         cancel: &AtomicBool,
-        progress: &mut dyn FnMut(u64),
+        sink: &mut Sink,
     ) -> Result<(), String> {
-        let write_error = |_| "Could not write the file".to_string();
         let mut in_flight: VecDeque<(Receiver<Response>, u64, u32)> = VecDeque::new();
         // Ranges a short read left open; asked for again before new ones.
         let mut retry: VecDeque<(u64, u32)> = VecDeque::new();
-        let (mut next, mut written, mut eof) = (0u64, 0u64, false);
+        let (mut next, mut eof) = (0u64, false);
         loop {
             if cancel.load(Ordering::Relaxed) {
                 return Err(CANCELLED.to_string());
@@ -373,10 +385,7 @@ impl SftpClient {
             };
             match self.wait(receiver)? {
                 Response::Data(data) if !data.is_empty() => {
-                    file.seek(SeekFrom::Start(offset)).map_err(write_error)?;
-                    file.write_all(&data).map_err(write_error)?;
-                    written += data.len() as u64;
-                    progress(written);
+                    sink(offset, &data)?;
                     let got = data.len() as u32;
                     if got < len {
                         retry.push_back((offset + u64::from(got), len - got));
@@ -390,6 +399,98 @@ impl SftpClient {
                 other => return Err(other.error()),
             }
         }
+    }
+
+    /// Copies `remote` to `dest_path` on `dest` (another server, or this one), created or
+    /// replaced, without a local file in between. A cancelled or failed copy removes the partial
+    /// target. `progress` gets the bytes the target server confirmed.
+    pub(crate) fn copy_to(
+        &self,
+        remote: &str,
+        dest: &SftpClient,
+        dest_path: &str,
+        cancel: &AtomicBool,
+        progress: &mut dyn FnMut(u64),
+    ) -> Result<(), String> {
+        let size = self.stat(remote)?.size;
+        let source = self
+            .request(|id| protocol::open(id, remote, protocol::OPEN_READ))?
+            .handle()?;
+        let flags = protocol::OPEN_WRITE | protocol::OPEN_CREATE | protocol::OPEN_TRUNCATE;
+        let target = match dest.request(|id| protocol::open(id, dest_path, flags)) {
+            Ok(response) => response.handle(),
+            Err(error) => Err(error),
+        };
+        let target = match target {
+            Ok(target) => target,
+            Err(error) => {
+                let _ = self.request(|id| protocol::close(id, &source));
+                return Err(error);
+            }
+        };
+        let mut in_flight: VecDeque<(Receiver<Response>, u64)> = VecDeque::new();
+        let mut confirmed = 0u64;
+        let result = self
+            .read_into(&source, size, cancel, &mut |offset, data| {
+                let receiver = dest.send(|id| protocol::write(id, &target, offset, data))?;
+                in_flight.push_back((receiver, data.len() as u64));
+                if in_flight.len() >= WINDOW {
+                    if let Some((receiver, len)) = in_flight.pop_front() {
+                        dest.wait(receiver)?.ok()?;
+                        confirmed += len;
+                        progress(confirmed);
+                    }
+                }
+                Ok(())
+            })
+            .and_then(|()| {
+                while let Some((receiver, len)) = in_flight.pop_front() {
+                    dest.wait(receiver)?.ok()?;
+                    confirmed += len;
+                    progress(confirmed);
+                }
+                Ok(())
+            });
+        let _ = self.request(|id| protocol::close(id, &source));
+        let closed = dest
+            .request(|id| protocol::close(id, &target))
+            .and_then(Response::ok);
+        match result.and(closed) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                let _ = dest.remove(dest_path);
+                Err(error)
+            }
+        }
+    }
+
+    /// Deletes a file, a link, or a folder with everything in it. Links to folders are removed,
+    /// never followed.
+    pub(crate) fn remove_tree(&self, path: &str) -> Result<(), String> {
+        self.remove_tree_at(path, 0)
+    }
+
+    fn remove_tree_at(&self, path: &str, depth: usize) -> Result<(), String> {
+        let attrs = self.request(|id| protocol::lstat(id, path))?.attrs()?;
+        if !attrs.is_dir() {
+            return self.remove(path);
+        }
+        if depth >= 64 {
+            return Err("The folder is nested too deeply".to_string());
+        }
+        let base = path.trim_end_matches('/');
+        for entry in self.list_dir(path)? {
+            if entry.name.contains('/') {
+                continue;
+            }
+            let child = format!("{base}/{}", entry.name);
+            if entry.is_link {
+                self.remove(&child)?;
+            } else {
+                self.remove_tree_at(&child, depth + 1)?;
+            }
+        }
+        self.rmdir(path)
     }
 
     /// Ends the process; pending requests fail with "connection lost".
@@ -628,8 +729,57 @@ mod tests {
         });
         assert_eq!(result.unwrap_err(), CANCELLED);
         assert!(!local.exists());
+
+        let cancel = AtomicBool::new(false);
+        let copied = text(&dir.join("partial-copy.bin"));
+        let result = client.copy_to(&text(&source), &client, &copied, &cancel, &mut |bytes| {
+            if bytes > 100_000 {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        });
+        assert_eq!(result.unwrap_err(), CANCELLED);
+        assert!(!Path::new(&copied).exists());
         // The connection still works afterwards.
         assert!(client.list_dir(&text(&dir)).is_ok());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn copies_between_servers_and_removes_trees() {
+        let (Some(first), Some(second)) = (local_client(), local_client()) else {
+            return;
+        };
+        let dir = temp_dir("server-copy");
+        let data: Vec<u8> = (0..1_000_000u32).map(|n| (n % 251) as u8).collect();
+        std::fs::write(dir.join("a.bin"), &data).unwrap();
+        let cancel = AtomicBool::new(false);
+        let mut last = 0;
+        first
+            .copy_to(
+                &text(&dir.join("a.bin")),
+                &second,
+                &text(&dir.join("b.bin")),
+                &cancel,
+                &mut |bytes| last = bytes,
+            )
+            .unwrap();
+        assert_eq!(std::fs::read(dir.join("b.bin")).unwrap(), data);
+        assert_eq!(last, data.len() as u64);
+
+        let tree = dir.join("tree");
+        std::fs::create_dir_all(tree.join("sub/deeper")).unwrap();
+        std::fs::write(tree.join("sub/deeper/x.txt"), "x").unwrap();
+        std::fs::write(tree.join("y.txt"), "y").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("keep"), tree.join("link")).unwrap();
+        std::fs::create_dir_all(dir.join("keep")).unwrap();
+        std::fs::write(dir.join("keep/z.txt"), "z").unwrap();
+        first.remove_tree(&text(&tree)).unwrap();
+        assert!(!tree.exists());
+        assert!(
+            dir.join("keep/z.txt").exists(),
+            "links are removed, not followed"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

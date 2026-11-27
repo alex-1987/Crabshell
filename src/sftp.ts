@@ -20,7 +20,8 @@ type TransferEvent = { file: string; current: string; bytes: number; total: numb
 export type Transfer = {
   key: string;
   transferId: string;
-  direction: "up" | "down";
+  /** Upload, download, or from one server to another ("copy", "move"). */
+  direction: "up" | "down" | "copy" | "move";
   server: string;
   /** File or folder name. */
   file: string;
@@ -35,6 +36,20 @@ export type Transfer = {
 };
 
 export type SftpConnection = { id: string; home: string };
+
+/** A file or folder on a server, as dragged or cut/copied in the file browser. */
+export type RemoteItem = {
+  connection: SftpConnection;
+  serverName: string;
+  path: string;
+  name: string;
+  isDir: boolean;
+  /** Folder it is in. */
+  parent: string;
+};
+
+/** "Copy" or "Cut" in the file browser; pasted with "Paste", also on another server. */
+export type FileClip = { item: RemoteItem; cut: boolean };
 
 /** A remote file opened with "Edit": watched locally, uploaded back when saved. */
 export type EditedFile = {
@@ -187,11 +202,21 @@ class SftpStore {
   // ---------------------------------------------------------------- edit
 
   private edits: EditedFile[] = [];
+  private clip: FileClip | null = null;
   private attentionHandler: (() => void) | null = null;
 
   /** Called when a saved file waits for "Upload", so the file browser can be shown. */
   onAttention(handler: (() => void) | null): void {
     this.attentionHandler = handler;
+  }
+
+  getClipboard(): FileClip | null {
+    return this.clip;
+  }
+
+  setClipboard(clip: FileClip | null): void {
+    this.clip = clip;
+    this.publish();
   }
 
   getEdits(): readonly EditedFile[] {
@@ -293,6 +318,31 @@ class SftpStore {
     }
   }
 
+  /**
+   * Copies a remote file or folder into `dir` on `target` (another server or the same one);
+   * `deleteSource` moves it (the original goes only when everything arrived).
+   * Progress shows in the transfer list; both folders reload afterwards.
+   */
+  async copy(source: SftpConnection, path: string, isDir: boolean, target: SftpConnection, serverName: string, dir: string, deleteSource: boolean): Promise<void> {
+    const transferId = crypto.randomUUID();
+    const onProgress = new Channel<TransferEvent>();
+    onProgress.onmessage = (event) => this.updateTransfer(transferId, deleteSource ? "move" : "copy", serverName, event);
+    try {
+      await invoke("sftp_copy", { fromId: source.id, from: path, isDir, toId: target.id, toDir: dir, deleteSource, transferId, onProgress });
+    } finally {
+      this.folderChanged(target, dir);
+      if (deleteSource) this.folderChanged(source, parentDir(path));
+      this.publish();
+    }
+  }
+
+  /** A folder's content changed: a browser showing it reloads. */
+  folderChanged(connection: SftpConnection, dir: string): void {
+    const key = `${connection.id}\n${dir}`;
+    this.changes.set(key, (this.changes.get(key) ?? 0) + 1);
+    this.publish();
+  }
+
   /** Downloads a file (save dialog) or a whole folder (folder dialog); null when cancelled. */
   async download(connection: SftpConnection, server: string, path: string, isDir: boolean): Promise<string | null> {
     const transferId = crypto.randomUUID();
@@ -309,6 +359,8 @@ export const sftpApi = {
   realpath: (connection: SftpConnection, path: string) => invoke<string>("sftp_realpath", { id: connection.id, path }),
   mkdir: (connection: SftpConnection, path: string) => invoke<void>("sftp_mkdir", { id: connection.id, path }),
   rename: (connection: SftpConnection, from: string, to: string) => invoke<void>("sftp_rename", { id: connection.id, from, to }),
+  /** Moves into `toDir` on the same server; returns the new path. */
+  move: (connection: SftpConnection, from: string, toDir: string) => invoke<string>("sftp_move", { id: connection.id, from, toDir }),
   remove: (connection: SftpConnection, path: string, isDir: boolean) => invoke<void>("sftp_remove", { id: connection.id, path, isDir }),
   existing: (connection: SftpConnection, paths: string[]) => invoke<string[]>("sftp_existing", { id: connection.id, paths }),
   pickFiles: (folders: boolean) => invoke<string[]>("sftp_pick_files", { folders }),

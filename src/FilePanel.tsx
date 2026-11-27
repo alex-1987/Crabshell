@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Dialog from "./Dialog";
 import { t } from "./i18n";
-import { cdCommand, formatSize, MAX_EDIT_BYTES, joinRemote, parentDir, sftpApi, sftpError, sftpStore, type ConnectOptions, type FileEntry, type SftpConnection } from "./sftp";
+import { cdCommand, formatSize, MAX_EDIT_BYTES, joinRemote, parentDir, sftpApi, sftpError, sftpStore, type ConnectOptions, type FileEntry, type RemoteItem, type SftpConnection } from "./sftp";
 import { serverAddress } from "./labels";
 import type { SavedHost } from "./terminalTypes";
+import { useFileDrag, type DragSource } from "./useFileDrag";
 import { useFloatingMenu } from "./useFloatingMenu";
 
 /** Where the browser stands; used for files dropped onto it. */
@@ -32,7 +33,10 @@ type FilePanelProps = {
   editor: string;
 };
 
-type EntryAction = "open" | "download" | "edit" | "cd" | "rename" | "delete";
+type EntryAction = "open" | "download" | "edit" | "cut" | "copy" | "paste" | "cd" | "rename" | "delete";
+
+/** Whether "Paste" works in a folder: null without anything copied, else a reason it does not. */
+type PasteState = { possible: boolean } | null;
 
 type Status = { state: "idle" } | { state: "loading" } | { state: "error"; message: string };
 
@@ -56,13 +60,20 @@ function validName(name: string): boolean {
 function NameField({ initial, label, onDone }: { initial: string; label: string; onDone: (name: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const input = ref.current;
     if (!input) return;
-    input.focus();
-    // Select the name without the extension, like file managers do.
-    const dot = initial.lastIndexOf(".");
-    input.setSelectionRange(0, dot > 0 ? dot : initial.length);
+    const focus = () => {
+      if (done.current || document.activeElement === input) return;
+      input.focus();
+      // Select the name without the extension, like file managers do.
+      const dot = initial.lastIndexOf(".");
+      input.setSelectionRange(0, dot > 0 ? dot : initial.length);
+    };
+    focus();
+    // A menu that just closed or the button that was clicked may take the focus back.
+    const frame = requestAnimationFrame(focus);
+    return () => cancelAnimationFrame(frame);
   }, [initial]);
   const finish = (value: string | null) => {
     if (done.current) return;
@@ -81,15 +92,18 @@ function NameField({ initial, label, onDone }: { initial: string; label: string;
         if (event.key === "Enter") finish(event.currentTarget.value);
         else if (event.key === "Escape") finish(null);
       }}
+      ref={ref}
       spellCheck={false}
     />
   );
 }
 
-function EntryMenu({ entry, x, y, onAction, onClose }: {
+function EntryMenu({ entry, x, y, paste, onAction, onClose }: {
   entry: FileEntry;
   x: number;
   y: number;
+  /** Pasting into this folder (only folders). */
+  paste: PasteState;
   onAction: (action: EntryAction) => void;
   onClose: () => void;
 }) {
@@ -102,7 +116,10 @@ function EntryMenu({ entry, x, y, onAction, onClose }: {
         { action: "edit" as const, label: t("files.edit"), disabled: tooLarge, hint: tooLarge ? t("files.editTooLarge") : t("files.editHint") },
         { action: "download" as const, label: t("files.download") },
       ]),
-    { action: "cd", label: entry.isDir ? t("files.cdHere") : t("files.cdFolder") },
+    { action: "cut", label: t("files.cut"), separator: true },
+    { action: "copy", label: t("files.copy") },
+    ...(entry.isDir && paste ? [{ action: "paste" as const, label: t("files.pasteInto"), disabled: !paste.possible, hint: paste.possible ? undefined : t("files.pasteBlocked") }] : []),
+    { action: "cd", label: entry.isDir ? t("files.cdHere") : t("files.cdFolder"), separator: true },
     { action: "rename", label: t("files.rename"), separator: true },
     { action: "delete", label: t("files.delete") },
   ];
@@ -111,6 +128,52 @@ function EntryMenu({ entry, x, y, onAction, onClose }: {
       {items.map((item) => (
         <button className={`context-menu-item${item.separator ? " context-menu-separated" : ""}`} disabled={item.disabled} key={item.action} onClick={() => onAction(item.action)} role="menuitem" title={item.hint} type="button">{item.label}</button>
       ))}
+    </div>
+  );
+}
+
+/** Right click on the free space of the list: paste into the shown folder, new folder. */
+function ListMenu({ x, y, paste, onPaste, onNewFolder, onClose }: {
+  x: number;
+  y: number;
+  paste: PasteState;
+  onPaste: () => void;
+  onNewFolder: () => void;
+  onClose: () => void;
+}) {
+  const { ref, position, handleMenuKey } = useFloatingMenu({ x, y, onClose });
+  return (
+    <div aria-label={t("files.menu")} className="context-menu" onContextMenu={(event) => event.preventDefault()} onKeyDown={handleMenuKey} ref={ref} role="menu" style={position}>
+      <button className="context-menu-item" disabled={!paste?.possible} onClick={onPaste} role="menuitem" title={paste && !paste.possible ? t("files.pasteBlocked") : undefined} type="button">{t("files.paste")}</button>
+      <button className="context-menu-item" onClick={onNewFolder} role="menuitem" type="button">{t("files.newFolder")}</button>
+    </div>
+  );
+}
+
+type DropRequest = { source: DragSource; dir: string; x: number; y: number; conflict: boolean };
+
+/** After a file or folder was dropped on a folder: always ask whether to move or copy it. */
+function DropMenu({ request, serverName, sameServer, onMove, onCopy, onClose }: {
+  request: DropRequest;
+  serverName: string;
+  sameServer: boolean;
+  onMove: () => void;
+  onCopy: () => void;
+  onClose: () => void;
+}) {
+  const { ref, position, handleMenuKey } = useFloatingMenu({ x: request.x, y: request.y, onClose });
+  const { source, dir, conflict } = request;
+  // A rename on the same server cannot replace anything.
+  const moveBlocked = sameServer && conflict;
+  return (
+    <div aria-label={t("files.dropMenu")} className="context-menu file-drop-menu" onContextMenu={(event) => event.preventDefault()} onKeyDown={handleMenuKey} ref={ref} role="menu" style={position}>
+      <div className="file-drop-menu-title" title={`${serverName}: ${dir}`}>{t("files.dropTo", { name: source.name, server: serverName, dir })}</div>
+      {conflict && <div className="file-drop-menu-note">{t("files.dropConflict", { name: source.name })}</div>}
+      <button className="context-menu-item" disabled={moveBlocked} onClick={onMove} role="menuitem" title={moveBlocked ? t("files.dropMoveBlocked") : undefined} type="button">
+        {sameServer ? t("files.dropMove") : t("files.dropMoveOther", { server: source.serverName })}
+      </button>
+      <button className="context-menu-item" onClick={onCopy} role="menuitem" type="button">{t("files.dropCopy")}</button>
+      <button className="context-menu-item context-menu-separated" onClick={onClose} role="menuitem" type="button">{t("common.cancel")}</button>
     </div>
   );
 }
@@ -195,7 +258,7 @@ function TransferList() {
         return (
           <div className={`file-transfer file-transfer-${item.state}`} key={item.key} role="listitem" title={`${item.server}: ${item.file}`}>
             <div className="file-transfer-line">
-              <span aria-hidden="true">{item.direction === "up" ? "↑" : "↓"}</span>
+              <span aria-hidden="true">{{ up: "↑", down: "↓", copy: "⧉", move: "→" }[item.direction]}</span>
               <span className="file-transfer-name">{item.file}</span>
               {item.state === "running" && <button aria-label={t("files.cancelTransfer", { name: item.file })} className="file-transfer-cancel" onClick={() => sftpStore.cancel(item.transferId)} title={t("files.cancelTransfer", { name: item.file })} type="button">×</button>}
             </div>
@@ -219,33 +282,35 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
   const [showHidden, setShowHidden] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [menu, setMenu] = useState<{ entry: FileEntry; x: number; y: number } | null>(null);
+  /** Folder in which "New folder" was started; the field closes when another folder is shown. */
+  const [creating, setCreating] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ entry: FileEntry | null; x: number; y: number } | null>(null);
   const [deleting, setDeleting] = useState<FileEntry | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [dropRequest, setDropRequest] = useState<DropRequest | null>(null);
   useSyncExternalStore(sftpStore.subscribe, sftpStore.getVersion);
   const requestRef = useRef(0);
   const serverName = server ? server.label || serverAddress(server) : "";
   const changes = connection ? sftpStore.changeCount(connection.id, dir) : 0;
 
-  /** Lists a folder and shows it; false when it failed (the error is shown). */
-  async function load(open: SftpConnection, path: string): Promise<boolean> {
+  /** Lists a folder and shows it: "failed" shows the error, "stale" means a newer request took over. */
+  async function load(open: SftpConnection, path: string): Promise<"shown" | "failed" | "stale"> {
     const request = ++requestRef.current;
     setStatus({ state: "loading" });
     try {
       const list = await sftpApi.list(open, path);
-      if (request !== requestRef.current) return false;
+      if (request !== requestRef.current) return "stale";
       setEntries(list);
       setDir(path);
       setPathText(path);
       setStatus({ state: "idle" });
       if (server) sftpStore.setLastDir(server.id, path);
-      return true;
+      return "shown";
     } catch (error) {
-      if (request !== requestRef.current) return false;
+      if (request !== requestRef.current) return "stale";
       setPathText(path);
       setStatus({ state: "error", message: sftpError(error) });
-      return false;
+      return "failed";
     }
   }
 
@@ -266,9 +331,10 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
         if (!active) return;
         setConnection(open);
         // The remembered folder may be gone meanwhile: fall back to the home directory.
+        // Not when a newer request (e.g. "Follow the terminal") took over meanwhile.
         const last = sftpStore.lastDir(server.id);
-        void load(open, last ?? open.home).then((shown) => {
-          if (!shown && active && last && last !== open.home) void load(open, open.home);
+        void load(open, last ?? open.home).then((result) => {
+          if (result === "failed" && active && last && last !== open.home) void load(open, open.home);
         });
       },
       (error: unknown) => { if (active) setStatus({ state: "error", message: sftpError(error) }); },
@@ -276,6 +342,12 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
     return () => { active = false; requestRef.current += 1; };
     // Reconnect only for a different server or connection settings.
   }, [server?.id, server?.host, server?.port, server?.username, server?.identityFile, server?.useProxy, options.proxy, options.keepaliveSeconds, attempt]);
+
+  // Another folder or server: a half-typed new name does not belong there.
+  useEffect(() => {
+    setCreating(null);
+    setRenaming(null);
+  }, [dir, connection]);
 
   // Uploads into the shown folder finished: show the new files.
   useEffect(() => {
@@ -298,6 +370,83 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
   useEffect(() => {
     if (follow && connection && terminalDir) void goTo(terminalDir);
   }, [follow, connection, terminalDir]);
+
+  /** Whether `source` can go into `target` on the server shown now. */
+  function canPlace(source: RemoteItem, target: string): boolean {
+    if (!connection || status.state === "error") return false;
+    if (source.connection.id !== connection.id) return true;
+    // Not where it already is, not onto or into itself.
+    return target !== source.parent && target !== source.path && !target.startsWith(`${source.path.replace(/\/+$/, "")}/`);
+  }
+
+  const clip = sftpStore.getClipboard();
+  const pasteState = (target: string): PasteState => (clip ? { possible: canPlace(clip.item, target) } : null);
+
+  /** "Paste": straight away, unless the name is taken there (then ask, like after a drop). */
+  function paste(target: string, x: number, y: number) {
+    setMenu(null);
+    const current = sftpStore.getClipboard();
+    if (!connection || !current) return;
+    if (!canPlace(current.item, target)) return setNotice(t("files.pasteBlocked"));
+    const open = connection;
+    void sftpApi.existing(open, [joinRemote(target, current.item.name)]).catch(() => []).then((existing) => {
+      if (requestConnection.current !== open) return;
+      if (existing.length > 0) return setDropRequest({ source: current.item, dir: target, x, y, conflict: true });
+      place(current.item, target, !current.cut);
+    });
+  }
+
+  function itemOf(entry: FileEntry): RemoteItem | null {
+    return connection ? { connection, serverName, path: joinRemote(dir, entry.name), name: entry.name, isDir: entry.isDir, parent: dir } : null;
+  }
+
+  function clipEntry(entry: FileEntry, cut: boolean) {
+    const item = itemOf(entry);
+    if (!item) return;
+    sftpStore.setClipboard({ item, cut });
+    setNotice(t(cut ? "files.cutDone" : "files.copyDone", { name: entry.name }));
+  }
+
+  const fileDrag = useFileDrag({
+    canDrop: canPlace,
+    onDrop: (source, target, x, y) => {
+      if (!connection) return;
+      const open = connection;
+      void sftpApi.existing(open, [joinRemote(target, source.name)]).catch(() => []).then((existing) => {
+        // Still the same server (the tab may have changed meanwhile).
+        if (requestConnection.current === open) setDropRequest({ source, dir: target, x, y, conflict: existing.length > 0 });
+      });
+    },
+  });
+  const requestConnection = useRef<SftpConnection | null>(null);
+  requestConnection.current = connection;
+  useEffect(() => setDropRequest(null), [connection]);
+
+  function dropAction(request: DropRequest, copy: boolean) {
+    setDropRequest(null);
+    place(request.source, request.dir, copy);
+  }
+
+  /** Moves or copies `source` into `target` on the server shown now. */
+  function place(source: RemoteItem, target: string, copy: boolean) {
+    if (!connection) return;
+    setNotice("");
+    // A cut item is pasted once.
+    const current = sftpStore.getClipboard();
+    if (!copy && current?.cut && current.item.path === source.path && current.item.connection.id === source.connection.id) sftpStore.setClipboard(null);
+    if (!copy && source.connection.id === connection.id) {
+      const open = connection;
+      void sftpApi.move(open, source.path, target).then(
+        () => {
+          sftpStore.folderChanged(open, target);
+          sftpStore.folderChanged(open, source.parent);
+        },
+        (error: unknown) => setNotice(sftpError(error)),
+      );
+      return;
+    }
+    sftpStore.copy(source.connection, source.path, source.isDir, connection, serverName, target, !copy).catch((error: unknown) => setNotice(sftpError(error)));
+  }
 
   const visible = sortEntries(entries, showHidden);
   const busy = status.state === "loading";
@@ -357,6 +506,8 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
       sftpStore.edit(connection, server, options, joinRemote(dir, entry.name), editor).catch((error: unknown) => setNotice(sftpError(error)));
     }
     else if (action === "cd") onCd(cdCommand(entry.isDir ? joinRemote(dir, entry.name) : dir));
+    else if (action === "cut" || action === "copy") clipEntry(entry, action === "cut");
+    else if (action === "paste") paste(joinRemote(dir, entry.name), menu?.x ?? 0, menu?.y ?? 0);
     else if (action === "rename") setRenaming(entry.name);
     else setDeleting(entry);
   }
@@ -376,7 +527,7 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
         <>
           <div className="file-server" title={serverAddress(server)}>{serverName}</div>
           <div className="file-toolbar">
-            <button aria-label={t("files.up")} className="icon-button" disabled={!connection || busy || dir === "/"} onClick={() => connection && void load(connection, parentDir(dir))} title={t("files.up")} type="button">↑</button>
+            <button aria-label={t("files.up")} className={`icon-button${fileDrag.targetDir && fileDrag.targetDir === parentDir(dir) && dir !== "/" ? " file-drop-target" : ""}`} data-drop-dir={dir && dir !== "/" ? parentDir(dir) : undefined} disabled={!connection || busy || dir === "/"} onClick={() => connection && void load(connection, parentDir(dir))} title={t("files.up")} type="button">↑</button>
             <input
               aria-label={t("files.path")}
               autoComplete="off"
@@ -395,7 +546,7 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
             <button aria-label={t("files.terminalDir")} className="icon-button" disabled={!connection || !terminalDir} onClick={() => void goTo(terminalDir)} title={terminalDir ? `${t("files.terminalDir")}: ${terminalDir}` : t("files.terminalDirUnknown")} type="button">⌖</button>
           </div>
           <div className="file-actions">
-            <button className="text-action" disabled={!connection || busy} onClick={() => setCreating(true)} type="button">{t("files.newFolder")}</button>
+            <button className="text-action" disabled={!connection || busy} onClick={() => setCreating(dir)} type="button">{t("files.newFolder")}</button>
             <button className="text-action" disabled={!connection || busy} onClick={() => void pickAndUpload(false)} type="button">{t("files.upload")}</button>
             <button className="text-action" disabled={!connection || busy} onClick={() => void pickAndUpload(true)} type="button">{t("files.uploadFolder")}</button>
             <label className="file-hidden-toggle" title={t("files.followTitle")}>
@@ -409,7 +560,21 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
           </div>
           {notice && <div aria-live="polite" className="page-notice file-notice">{notice}</div>}
 
-          <div aria-busy={busy} aria-label={t("files.list")} className="file-list" role="list">
+          <div aria-busy={busy} aria-label={t("files.list")} className={`file-list${fileDrag.targetDir && fileDrag.targetDir === dir ? " file-list-drop" : ""}`}
+            data-drop-dir={dir || undefined}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              if (connection && status.state !== "error") setMenu({ entry: null, x: event.clientX, y: event.clientY });
+            }}
+            onKeyDown={(event) => {
+              if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && connection) {
+                event.preventDefault();
+                const rect = (event.target as HTMLElement).getBoundingClientRect();
+                paste(dir, rect.left + 24, rect.bottom);
+              }
+            }}
+            role="list"
+          >
             {status.state === "error" ? (
               <div aria-live="polite" className="sidebar-storage-error">
                 {status.message}
@@ -427,31 +592,37 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
               </div>
             ) : (
               <>
-                {creating && (
+                {creating !== null && creating === dir && (
                   <div className="file-row" role="listitem">
                     <span aria-hidden="true" className="file-icon">📁</span>
                     <NameField
                       initial=""
                       label={t("files.newFolder")}
                       onDone={(name) => {
-                        setCreating(false);
-                        if (name === null || name === "") return;
+                        const parent = creating;
+                        setCreating(null);
+                        if (name === null || name === "" || parent !== dir) return;
                         if (!validName(name)) return setNotice(t("files.invalidName"));
-                        void run(() => sftpApi.mkdir(connection as SftpConnection, joinRemote(dir, name)));
+                        void run(() => sftpApi.mkdir(connection as SftpConnection, joinRemote(parent, name)));
                       }}
                     />
                   </div>
                 )}
                 {busy && entries.length === 0 && <div className="sidebar-empty">{t("files.loading")}</div>}
-                {!busy && visible.length === 0 && !creating && <div className="sidebar-empty">{t("files.empty")}</div>}
-                {visible.map((entry) => (
+                {!busy && visible.length === 0 && creating !== dir && <div className="sidebar-empty">{t("files.empty")}</div>}
+                {visible.map((entry) => {
+                  const path = joinRemote(dir, entry.name);
+                  return (
                   <div
                     aria-selected={selected === entry.name}
-                    className={`file-row${selected === entry.name ? " file-row-selected" : ""}`}
+                    className={`file-row${selected === entry.name ? " file-row-selected" : ""}${fileDrag.draggingPath === path || (clip?.cut && clip.item.path === path && clip.item.connection.id === connection?.id) ? " list-drag-source" : ""}${entry.isDir && fileDrag.targetDir === path ? " file-drop-target" : ""}`}
+                    data-drop-dir={entry.isDir ? path : undefined}
                     key={entry.name}
+                    {...fileDrag.sourceProps(() => connection && renaming !== entry.name ? { connection, serverName, path, name: entry.name, isDir: entry.isDir, parent: dir } : null)}
                     onClick={() => setSelected(entry.name)}
                     onContextMenu={(event) => {
                       event.preventDefault();
+                      event.stopPropagation();
                       setSelected(entry.name);
                       setMenu({ entry, x: event.clientX, y: event.clientY });
                     }}
@@ -460,6 +631,9 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
                       if (event.key === "Enter") {
                         if (entry.isDir) open(entry);
                         else void download(entry);
+                      } else if ((event.ctrlKey || event.metaKey) && ["c", "x"].includes(event.key.toLowerCase())) {
+                        event.preventDefault();
+                        clipEntry(entry, event.key.toLowerCase() === "x");
                       } else if (event.key === "F2") setRenaming(entry.name);
                       else if (event.key === "Delete") setDeleting(entry);
                     }}
@@ -485,7 +659,8 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
                     <span className="file-meta">{entry.isDir ? "" : formatSize(entry.size)}</span>
                     <span className="file-meta file-date">{formatDate(entry.modified)}</span>
                   </div>
-                ))}
+                  );
+                })}
               </>
             )}
           </div>
@@ -495,7 +670,28 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
       <EditList editor={editor} />
       <TransferList />
 
-      {menu && <EntryMenu entry={menu.entry} onAction={(action) => menuAction(menu.entry, action)} onClose={() => setMenu(null)} x={menu.x} y={menu.y} />}
+      {fileDrag.overlay}
+      {dropRequest && connection && (
+        <DropMenu
+          onClose={() => setDropRequest(null)}
+          onCopy={() => dropAction(dropRequest, true)}
+          onMove={() => dropAction(dropRequest, false)}
+          request={dropRequest}
+          sameServer={dropRequest.source.connection.id === connection.id}
+          serverName={serverName}
+        />
+      )}
+      {menu?.entry && <EntryMenu entry={menu.entry} onAction={(action) => menuAction(menu.entry as FileEntry, action)} onClose={() => setMenu(null)} paste={menu.entry.isDir ? pasteState(joinRemote(dir, menu.entry.name)) : null} x={menu.x} y={menu.y} />}
+      {menu && !menu.entry && (
+        <ListMenu
+          onClose={() => setMenu(null)}
+          onNewFolder={() => { setMenu(null); setCreating(dir); }}
+          onPaste={() => paste(dir, menu.x, menu.y)}
+          paste={pasteState(dir)}
+          x={menu.x}
+          y={menu.y}
+        />
+      )}
       {deleting && (
         <Dialog className="paste-dialog" closeLabel={t("common.cancel")} onClose={() => setDeleting(null)} title={deleting.isDir ? t("files.deleteFolderTitle") : t("files.deleteFileTitle")} titleId="file-delete-title">
           <div className="form-footnote">{t(deleting.isDir ? "files.deleteFolderText" : "files.deleteFileText", { name: deleting.name, server: serverName })}</div>

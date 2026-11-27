@@ -159,7 +159,15 @@ pub(crate) fn plan_download(
     let mut plan = Plan::default();
     if is_dir {
         plan.dirs.push(target.clone());
-        walk_remote(client, remote, &target, local_name, 0, &mut plan)?;
+        walk_remote(
+            client,
+            remote,
+            &target,
+            local_name,
+            0,
+            &mut plan,
+            &|dir: &PathBuf, name| dir.join(name),
+        )?;
     } else {
         let size = client.stat(remote)?.size.unwrap_or(0);
         plan.total = size;
@@ -169,14 +177,19 @@ pub(crate) fn plan_download(
     Ok(plan)
 }
 
-fn walk_remote(
+/// Walks a remote folder; `join` builds the target path of an entry (local or remote).
+fn walk_remote<T>(
     client: &SftpClient,
     remote: &str,
-    local: &Path,
+    target_dir: &T,
     shown: &str,
     depth: usize,
-    plan: &mut Plan<PathBuf, PathBuf>,
-) -> Result<(), String> {
+    plan: &mut Plan<T, T>,
+    join: &dyn Fn(&T, &str) -> T,
+) -> Result<(), String>
+where
+    T: Clone + From<String>,
+{
     if depth >= MAX_DEPTH {
         plan.skipped += 1;
         return Ok(());
@@ -197,18 +210,18 @@ fn walk_remote(
             continue;
         }
         let source = format!("{}/{}", remote.trim_end_matches('/'), entry.name);
-        let target = local.join(&entry.name);
+        let target = join(target_dir, &entry.name);
         let label = format!("{shown}/{}", entry.name);
         if entry.is_dir {
             plan.dirs.push(target.clone());
-            walk_remote(client, &source, &target, &label, depth + 1, plan)?;
+            walk_remote(client, &source, &target, &label, depth + 1, plan, join)?;
         } else {
             if plan.files.len() >= MAX_FILES {
                 return Err(too_many());
             }
             plan.total += entry.size;
             plan.files
-                .push((PathBuf::from(source), target, entry.size, label));
+                .push((T::from(source), target, entry.size, label));
         }
     }
     Ok(())
@@ -239,14 +252,73 @@ pub(crate) fn free_local_name(dir: &Path, name: &str) -> String {
         .unwrap_or_else(|| format!("{name} (copy)"))
 }
 
+// ------------------------------------------------------------------ server to server
+
+fn join_remote(dir: &str, name: &str) -> String {
+    format!("{}/{name}", dir.trim_end_matches('/'))
+}
+
+/// Plan for a remote file or folder on `source` going into `dest_dir` on another (or the same)
+/// server, keeping its name.
+pub(crate) fn plan_remote_copy(
+    source: &SftpClient,
+    path: &str,
+    is_dir: bool,
+    dest_dir: &str,
+) -> Result<Plan<String, String>, String> {
+    let name = path
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .to_string();
+    if !safe_name(&name) {
+        return Err("This name cannot be used".to_string());
+    }
+    let target = join_remote(dest_dir, &name);
+    let mut plan = Plan::default();
+    if is_dir {
+        plan.dirs.push(target.clone());
+        walk_remote(
+            source,
+            path,
+            &target,
+            &name,
+            0,
+            &mut plan,
+            &|dir: &String, name| join_remote(dir, name),
+        )?;
+    } else {
+        let size = source.stat(path)?.size.unwrap_or(0);
+        plan.total = size;
+        plan.files.push((path.to_string(), target, size, name));
+    }
+    Ok(plan)
+}
+
+pub(crate) fn run_remote_copy(
+    source: &SftpClient,
+    dest: &SftpClient,
+    plan: &Plan<String, String>,
+    cancel: &AtomicBool,
+    report: &mut dyn FnMut(u64, &str),
+) -> Result<Outcome, String> {
+    for dir in &plan.dirs {
+        ensure_remote_dir(dest, dir)?;
+    }
+    copy_files(plan, cancel, report, |from, to, progress| {
+        source.copy_to(from, dest, to, cancel, progress)
+    })
+}
+
 // ------------------------------------------------------------------ shared
 
 /// Copies the plan's files; a failed file is counted and the rest goes on. Cancelling stops.
-fn copy_files<Dir>(
-    plan: &Plan<Dir, PathBuf>,
+fn copy_files<Dir, File>(
+    plan: &Plan<Dir, File>,
     cancel: &AtomicBool,
     report: &mut dyn FnMut(u64, &str),
-    mut copy: impl FnMut(&Path, &Path, &mut dyn FnMut(u64)) -> Result<(), String>,
+    mut copy: impl FnMut(&File, &File, &mut dyn FnMut(u64)) -> Result<(), String>,
 ) -> Result<Outcome, String> {
     let mut outcome = Outcome {
         failed: plan.skipped,
@@ -372,6 +444,36 @@ mod tests {
         assert_eq!(fs::read(back.join("site/big.bin")).unwrap().len(), 300_000);
         assert_eq!(fs::read(back.join("site/css/a.css")).unwrap(), b"body{}");
         assert!(back.join("site/empty").is_dir());
+
+        // Server to server: the remote folder into another remote folder.
+        let Some(other) = local_client() else {
+            return;
+        };
+        let copy_dir = root.join("copy");
+        fs::create_dir_all(&copy_dir).unwrap();
+        let plan =
+            plan_remote_copy(&client, &remote_site, true, &copy_dir.to_string_lossy()).unwrap();
+        assert_eq!(plan.files.len(), 3);
+        let mut last = 0;
+        let outcome = run_remote_copy(&client, &other, &plan, &cancel, &mut |bytes, _| {
+            last = bytes
+        })
+        .unwrap();
+        assert_eq!(outcome.failed, 0);
+        assert_eq!(last, plan.total);
+        assert_eq!(
+            fs::read(copy_dir.join("site/big.bin")).unwrap().len(),
+            300_000
+        );
+        assert_eq!(
+            fs::read(copy_dir.join("site/index.html")).unwrap(),
+            b"<h1>new</h1>"
+        );
+        assert!(copy_dir.join("site/empty").is_dir());
+        let file = remote.join("site/css/a.css").to_string_lossy().into_owned();
+        let plan = plan_remote_copy(&client, &file, false, &copy_dir.to_string_lossy()).unwrap();
+        run_remote_copy(&client, &other, &plan, &cancel, &mut |_, _| {}).unwrap();
+        assert_eq!(fs::read(copy_dir.join("a.css")).unwrap(), b"body{}");
         fs::remove_dir_all(&root).unwrap();
     }
 }

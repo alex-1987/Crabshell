@@ -139,6 +139,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             sftp::sftp_realpath,
             sftp::sftp_mkdir,
             sftp::sftp_rename,
+            sftp::sftp_move,
+            sftp::sftp_copy,
             sftp::sftp_remove,
             sftp::sftp_existing,
             sftp::sftp_pick_files,

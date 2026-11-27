@@ -275,6 +275,91 @@ pub(crate) async fn sftp_rename(
     .await
 }
 
+/// Moves a file or folder into `to_dir` on the same server (keeps its name). Fails when the
+/// name is taken there or a folder would go into itself. Returns the new path.
+#[tauri::command]
+pub(crate) async fn sftp_move(
+    id: String,
+    from: String,
+    to_dir: String,
+    state: tauri::State<'_, SftpState>,
+) -> Result<String, String> {
+    let client = state.client(&id)?;
+    let target = move_target(&from, &to_dir)?;
+    blocking(move || {
+        if client.exists(&target)? {
+            return Err("A file or folder with this name already exists".to_string());
+        }
+        client.rename(&from, &target)?;
+        Ok(target)
+    })
+    .await
+}
+
+/// Where `from` lands in `to_dir`; refuses a folder going into itself and staying in place.
+fn move_target(from: &str, to_dir: &str) -> Result<String, String> {
+    let from = from.trim_end_matches('/');
+    let to_dir = to_dir.trim_end_matches('/');
+    let name = file_name(from);
+    if from.is_empty() || !transfer::safe_name(&name) {
+        return Err("This name cannot be used".to_string());
+    }
+    if to_dir == from || to_dir.starts_with(&format!("{from}/")) {
+        return Err("A folder cannot be moved into itself".to_string());
+    }
+    let target = format!("{to_dir}/{name}");
+    if target == from {
+        return Err("The file is already in this folder".to_string());
+    }
+    Ok(target)
+}
+
+/// Copies a file or folder from one server into `to_dir` on another (or the same) server,
+/// streamed through the app. Existing folders are merged, files with the same name replaced.
+/// With `delete_source` (moving between servers) the source is deleted, but only when every
+/// file arrived.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn sftp_copy(
+    from_id: String,
+    from: String,
+    is_dir: bool,
+    to_id: String,
+    to_dir: String,
+    delete_source: bool,
+    transfer_id: String,
+    on_progress: Channel<TransferEvent>,
+    state: tauri::State<'_, SftpState>,
+) -> Result<(), String> {
+    let source = state.client(&from_id)?;
+    let dest = state.client(&to_id)?;
+    // On the same server the copy must not land on the original (it would be emptied) or
+    // inside it (it would never end).
+    if from_id == to_id {
+        move_target(&from, &to_dir)?;
+    }
+    let name = file_name(from.trim_end_matches('/'));
+    let cancel = state.start_transfer(&transfer_id)?;
+    let result = blocking(move || {
+        let copied = run_item(
+            &on_progress,
+            &name,
+            &cancel,
+            || transfer::plan_remote_copy(&source, &from, is_dir, &to_dir),
+            |plan, report| transfer::run_remote_copy(&source, &dest, plan, &cancel, report),
+        );
+        if copied && delete_source {
+            source
+                .remove_tree(&from)
+                .map_err(|_| "Copied, but the original could not be deleted".to_string())?;
+        }
+        Ok(())
+    })
+    .await;
+    state.end_transfer(&transfer_id);
+    result
+}
+
 /// Deletes a file, or a folder only when it is empty.
 #[tauri::command]
 pub(crate) async fn sftp_remove(
@@ -471,7 +556,8 @@ fn run_item<Plan>(
     cancel: &AtomicBool,
     plan: impl FnOnce() -> Result<Plan, String>,
     copy: impl FnOnce(&Plan, &mut dyn FnMut(u64, &str)) -> Result<transfer::Outcome, String>,
-) where
+) -> bool
+where
     Plan: PlanTotal,
 {
     let event = |current: &str, bytes, total, state, failed, error| TransferEvent {
@@ -488,7 +574,7 @@ fn run_item<Plan>(
         Ok(plan) => plan,
         Err(error) => {
             let _ = channel.send(event(name, 0, 0, "failed", 0, Some(error)));
-            return;
+            return false;
         }
     };
     let total = plan.total();
@@ -503,6 +589,7 @@ fn run_item<Plan>(
             let _ = channel.send(event(file, bytes, total, "running", 0, None));
         }
     });
+    let complete = matches!(&result, Ok(outcome) if outcome.failed == 0);
     let _ = channel.send(match result {
         Ok(outcome) if outcome.failed == 0 => event(name, total.max(last), total, "done", 0, None),
         Ok(outcome) => event(
@@ -519,6 +606,7 @@ fn run_item<Plan>(
         Err(error) if error == CANCELLED => event(&current, last, total, "cancelled", 0, None),
         Err(error) => event(&current, last, total, "failed", 0, Some(error)),
     });
+    complete
 }
 
 /// Total size of a plan, whatever its path types.
@@ -557,6 +645,19 @@ mod tests {
         );
         assert!(upload_sources(&[text(&dir.join("missing"))]).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn move_targets_refuse_loops_and_staying_put() {
+        assert_eq!(
+            move_target("/srv/a.txt", "/home/u").unwrap(),
+            "/home/u/a.txt"
+        );
+        assert_eq!(move_target("/srv/site", "/").unwrap(), "/site");
+        assert!(move_target("/srv/site", "/srv/site").is_err());
+        assert!(move_target("/srv/site", "/srv/site/css").is_err());
+        assert!(move_target("/srv/a.txt", "/srv").is_err());
+        assert!(move_target("/srv/site", "/srv/site-old").is_ok());
     }
 
     #[test]
