@@ -1,6 +1,6 @@
 [package]
 name = "crabshell"
-version = "0.3.2"
+version = "0.3.3"
 description = "A local OpenSSH terminal manager"
 authors = ["Crabshell"]
 edition = "2021"
