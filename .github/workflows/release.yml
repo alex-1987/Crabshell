@@ -144,6 +144,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Neuere ConPTY von Microsoft neben crabshell.exe: die lokale PowerShell läuft damit
+      # deutlich schneller als mit der in Windows eingebauten (tauri.windows.conf.json).
+      - name: Fetch ConPTY
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/fetch-conpty.ps1
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

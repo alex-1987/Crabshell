@@ -345,6 +345,17 @@ The packages end up in `src-tauri/target/release/bundle/` (`deb/`, `rpm/`, `appi
 
 If the AppImage step fails while stripping libraries (common on very new distributions such as Arch), retry with `NO_STRIP=true npm run tauri build -- --bundles appimage`, or use a native package instead.
 
+### 3c. Windows: build the installer
+
+Install Rust, Node.js and the [Tauri prerequisites for Windows](https://v2.tauri.app/start/prerequisites/#windows), then in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/fetch-conpty.ps1   # once: ConPTY for the installer
+npm run tauri build
+```
+
+`fetch-conpty.ps1` downloads Microsoft's ConPTY (`conpty.dll` and `OpenConsole.exe`, pinned version, SHA256-checked) into `src-tauri/windows/conpty/`. The installer puts both files next to `crabshell.exe`, where they replace the slower ConPTY built into Windows (much of the difference shows in local PowerShell tabs). Without the files, `tauri build` stops with a missing-resource error. The installers end up in `src-tauri/target/release/bundle/` (`nsis/`, `msi/`).
+
 </details>
 
 ## Development
@@ -419,5 +430,7 @@ Crabshell is dual-licensed under either of
 - [Apache License, Version 2.0](LICENSE-APACHE)
 
 at your option.
+
+The Windows installer also contains `conpty.dll` and `OpenConsole.exe` from Microsoft's [Windows Terminal](https://github.com/microsoft/terminal) project (NuGet package `Microsoft.Windows.Console.ConPTY`), licensed under the MIT License.
 
 Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in Crabshell, as defined in the Apache-2.0 license, is dual-licensed as above, without any additional terms or conditions.

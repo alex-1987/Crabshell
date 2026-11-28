@@ -2,6 +2,8 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+# Downloaded by scripts/fetch-conpty.ps1 (Windows build)
+src-tauri/windows/conpty/
 *.log
 
 # makepkg output
