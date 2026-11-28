@@ -12,7 +12,7 @@ const MIN_TERMINAL_WIDTH = 480;
 /** Below this window width the panels overlay the terminal (see styles.css); only one fits. */
 const OVERLAY_BREAKPOINT = 760;
 const MIN_PANEL_WIDTH = 180;
-const MAX_PANEL_WIDTH = 420;
+const MAX_PANEL_WIDTH = 640;
 
 const clampPanelWidth = (width: number) => Math.round(Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, width)));
 

@@ -127,6 +127,8 @@ class TerminalStore {
   private snapshot = initialSnapshot;
   private proxy: ProxyConfig | null = null;
   private autoReconnect = true;
+  /** File browser (SFTP) on: the menu offers "Open folder in the file browser". */
+  private filesEnabled = true;
   /** Seconds between SSH keepalives; null when switched off. */
   private keepaliveSeconds: number | null = 10;
   private clipboardPreferences: ClipboardPreferences = {
@@ -426,6 +428,10 @@ class TerminalStore {
   /** A short message in a pane (fades out), e.g. why a drop could not be uploaded. */
   showNotice(paneId: string, notice: string): void {
     this.updatePane(paneId, { notice });
+  }
+
+  setFilesEnabled(enabled: boolean): void {
+    this.filesEnabled = enabled;
   }
 
   /** Reconnect SSH panes that lost their connection; switching it off stops pending reconnects. */
@@ -966,7 +972,7 @@ class TerminalStore {
         paneId,
         split: (tab?.panes.length ?? 1) > 1,
         broadcast: tab?.broadcast ?? false,
-        ssh: this.paneState(paneId)?.kind === "ssh",
+        files: this.filesEnabled && this.paneState(paneId)?.kind === "ssh",
         cwd: this.paneState(paneId)?.cwd ?? "",
         x: event.clientX,
         y: event.clientY,

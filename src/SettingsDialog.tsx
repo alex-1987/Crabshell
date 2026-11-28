@@ -290,6 +290,11 @@ export default function SettingsDialog({ settings, servers, initialAppearanceId,
                   <span>{t("settings.seconds")}</span>
                 </div>
                 <div className="form-footnote">{t("settings.keepaliveHint", { seconds: (draft.keepaliveSeconds || 10) * 3 })}</div>
+                <label className="sidebar-setting">
+                  <input checked={draft.filesEnabled} onChange={(event) => setDraft({ ...draft, filesEnabled: event.target.checked })} type="checkbox" />
+                  <span>{t("settings.filesEnabled")}</span>
+                </label>
+                <div className="form-footnote">{t("settings.filesEnabledHint")}</div>
               </div>
             )}
 

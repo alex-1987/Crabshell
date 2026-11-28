@@ -15,8 +15,8 @@ export default function TerminalContextMenu({ menu }: { menu: MenuState }) {
     { action: "selectAll", label: t("menu.selectAll") },
     { action: "snippets", label: t("menu.snippets"), shortcut: terminalStore.shortcutLabel("snippets") },
     { action: "saveOutput", label: t("menu.saveOutput") },
-    // Only SSH panes; greyed out while the shell has not told its folder.
-    ...(menu.ssh ? [{ action: "openFolder" as const, label: t("menu.openFolder"), disabled: !menu.cwd, hint: menu.cwd || t("menu.openFolderUnknown") }] : []),
+    // Only SSH panes with the file browser on; greyed out while the shell has not told its folder.
+    ...(menu.files ? [{ action: "openFolder" as const, label: t("menu.openFolder"), disabled: !menu.cwd, hint: menu.cwd || t("menu.openFolderUnknown") }] : []),
     // A split tab offers switching the direction; the shortcuts always split with the same session.
     { action: "splitRow", label: menu.split ? t("menu.layoutRow") : t("menu.splitRow"), shortcut: menu.split ? undefined : terminalStore.shortcutLabel("splitRight"), separator: true },
     { action: "splitColumn", label: menu.split ? t("menu.layoutColumn") : t("menu.splitColumn"), shortcut: menu.split ? undefined : terminalStore.shortcutLabel("splitDown") },

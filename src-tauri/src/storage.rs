@@ -144,6 +144,8 @@ pub(crate) struct AppSettings {
     pub keepalive_seconds: u16,
     /// Tab of the right-hand panel: "snippets" or "files" (file browser).
     pub right_panel: String,
+    /// File browser (SFTP): off means no file panel and no second SSH connection.
+    pub files_enabled: bool,
     /// The file browser follows the folder of the active terminal.
     pub files_follow_terminal: bool,
     /// Program for "Edit" in the file browser: an absolute path or a command name; empty means
@@ -202,7 +204,7 @@ fn normalize_keybindings(bindings: &mut BTreeMap<String, Vec<String>>) {
 
 const UI_SCALE_RANGE: std::ops::RangeInclusive<u16> = 80..=150;
 /// Width of the server sidebar and the snippet panel in px (same limits as usePanelLayout.ts).
-const PANEL_WIDTH_RANGE: std::ops::RangeInclusive<u16> = 180..=420;
+const PANEL_WIDTH_RANGE: std::ops::RangeInclusive<u16> = 180..=640;
 
 /// Empty (default) or a font family name that is safe to put into CSS.
 fn valid_font(name: &str) -> bool {
@@ -246,6 +248,7 @@ impl Default for AppSettings {
             keepalive_enabled: true,
             keepalive_seconds: 10,
             right_panel: "snippets".to_string(),
+            files_enabled: true,
             files_follow_terminal: false,
             editor: String::new(),
         }

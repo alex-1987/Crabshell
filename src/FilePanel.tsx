@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Dialog from "./Dialog";
 import { t } from "./i18n";
-import { cdCommand, formatSize, MAX_EDIT_BYTES, joinRemote, parentDir, sftpApi, sftpError, sftpStore, type ConnectOptions, type FileEntry, type RemoteItem, type SftpConnection } from "./sftp";
+import { cdCommand, formatMode, formatSize, MAX_EDIT_BYTES, joinRemote, parentDir, sftpApi, sftpError, sftpStore, type ConnectOptions, type FileEntry, type RemoteItem, type SftpConnection } from "./sftp";
 import { serverAddress } from "./labels";
 import type { SavedHost } from "./terminalTypes";
 import { useFileDrag, type DragSource } from "./useFileDrag";
@@ -33,7 +33,7 @@ type FilePanelProps = {
   editor: string;
 };
 
-type EntryAction = "open" | "download" | "edit" | "cut" | "copy" | "paste" | "cd" | "rename" | "delete";
+type EntryAction = "open" | "download" | "edit" | "cut" | "copy" | "paste" | "cd" | "rename" | "delete" | "reload";
 
 /** Whether "Paste" works in a folder: null without anything copied, else a reason it does not. */
 type PasteState = { possible: boolean } | null;
@@ -122,6 +122,7 @@ function EntryMenu({ entry, x, y, paste, onAction, onClose }: {
     { action: "cd", label: entry.isDir ? t("files.cdHere") : t("files.cdFolder"), separator: true },
     { action: "rename", label: t("files.rename"), separator: true },
     { action: "delete", label: t("files.delete") },
+    { action: "reload", label: t("files.reload"), separator: true },
   ];
   return (
     <div aria-label={t("files.menu")} className="context-menu" onContextMenu={(event) => event.preventDefault()} onKeyDown={handleMenuKey} ref={ref} role="menu" style={position}>
@@ -133,12 +134,13 @@ function EntryMenu({ entry, x, y, paste, onAction, onClose }: {
 }
 
 /** Right click on the free space of the list: paste into the shown folder, new folder. */
-function ListMenu({ x, y, paste, onPaste, onNewFolder, onClose }: {
+function ListMenu({ x, y, paste, onPaste, onNewFolder, onReload, onClose }: {
   x: number;
   y: number;
   paste: PasteState;
   onPaste: () => void;
   onNewFolder: () => void;
+  onReload: () => void;
   onClose: () => void;
 }) {
   const { ref, position, handleMenuKey } = useFloatingMenu({ x, y, onClose });
@@ -146,6 +148,7 @@ function ListMenu({ x, y, paste, onPaste, onNewFolder, onClose }: {
     <div aria-label={t("files.menu")} className="context-menu" onContextMenu={(event) => event.preventDefault()} onKeyDown={handleMenuKey} ref={ref} role="menu" style={position}>
       <button className="context-menu-item" disabled={!paste?.possible} onClick={onPaste} role="menuitem" title={paste && !paste.possible ? t("files.pasteBlocked") : undefined} type="button">{t("files.paste")}</button>
       <button className="context-menu-item" onClick={onNewFolder} role="menuitem" type="button">{t("files.newFolder")}</button>
+      <button className="context-menu-item context-menu-separated" onClick={onReload} role="menuitem" type="button">{t("files.reload")}</button>
     </div>
   );
 }
@@ -498,7 +501,8 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
 
   function menuAction(entry: FileEntry, action: EntryAction) {
     setMenu(null);
-    if (action === "open") open(entry);
+    if (action === "reload") { if (connection) void load(connection, dir); }
+    else if (action === "open") open(entry);
     else if (action === "download") void download(entry);
     else if (action === "edit") {
       if (!connection || !server) return;
@@ -658,6 +662,7 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
                     )}
                     <span className="file-meta">{entry.isDir ? "" : formatSize(entry.size)}</span>
                     <span className="file-meta file-date">{formatDate(entry.modified)}</span>
+                    <span className="file-meta file-mode" title={entry.permissions ? entry.permissions.toString(8).padStart(4, "0") : undefined}>{formatMode(entry)}</span>
                   </div>
                   );
                 })}
@@ -686,6 +691,7 @@ export default function FilePanel({ server, options, panelSwitch, dropActive, on
         <ListMenu
           onClose={() => setMenu(null)}
           onNewFolder={() => { setMenu(null); setCreating(dir); }}
+          onReload={() => { setMenu(null); if (connection) void load(connection, dir); }}
           onPaste={() => paste(dir, menu.x, menu.y)}
           paste={pasteState(dir)}
           x={menu.x}

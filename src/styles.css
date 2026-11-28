@@ -708,7 +708,8 @@ input, .key-picker-button, .key-picker-clear { height: 32px; }
 .file-icon { grid-row: 1 / span 2; font-size: 13px; line-height: 1; }
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-meta { color: var(--text-faint); font-size: 10px; text-align: right; white-space: nowrap; }
-.file-date { grid-column: 2 / span 2; text-align: left; }
+.file-date { grid-column: 2; text-align: left; }
+.file-mode { grid-column: 3; font-family: var(--font-mono); }
 .file-name-field { grid-column: 2 / span 2; height: 24px; padding: 0 6px; font-size: 12px; }
 .file-retry { display: block; margin-top: 6px; color: var(--accent); }
 .file-drop-hint { margin: 6px 4px 0; color: var(--text-faint); font-size: 10px; line-height: 1.4; }

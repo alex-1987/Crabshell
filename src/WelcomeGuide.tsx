@@ -9,6 +9,8 @@ type WelcomeGuideProps = {
   checkUpdates: boolean;
   onUpdateChoice: (enabled: boolean) => void;
   doubleClick: boolean;
+  /** The file browser (SFTP) is on; otherwise its step is left out. */
+  filesEnabled: boolean;
   onAddServer: () => void;
   onLocalShell: () => void;
   onSnippets: () => void;
@@ -21,7 +23,7 @@ function Keys({ combo }: { combo: string }) {
 }
 
 /** Short getting-started guide in the empty terminal area (shown while no tab is open). */
-export default function WelcomeGuide({ hasServers, updatesAsked, checkUpdates, onUpdateChoice, doubleClick, onAddServer, onLocalShell, onSnippets, onSettings, onHide }: WelcomeGuideProps) {
+export default function WelcomeGuide({ hasServers, updatesAsked, checkUpdates, onUpdateChoice, doubleClick, filesEnabled, onAddServer, onLocalShell, onSnippets, onSettings, onHide }: WelcomeGuideProps) {
   const key = (action: Parameters<typeof terminalStore.shortcutLabel>[0]) => terminalStore.shortcutLabel(action);
   return (
     <div className="welcome">
@@ -88,6 +90,14 @@ export default function WelcomeGuide({ hasServers, updatesAsked, checkUpdates, o
           </div>
           <button className="button button-secondary welcome-action" onClick={onSnippets} type="button">{t("welcome.snippetsButton")}</button>
         </li>
+        {filesEnabled && (
+          <li>
+            <div className="welcome-step-text">
+              <strong>{t("welcome.filesTitle")}</strong>
+              <span>{t("welcome.filesText")}</span>
+            </div>
+          </li>
+        )}
         <li>
           <div className="welcome-step-text">
             <strong>{t("welcome.clipboardTitle")}</strong>

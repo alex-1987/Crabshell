@@ -63,6 +63,7 @@ export const defaultSettings: AppSettings = {
   keepaliveEnabled: true,
   keepaliveSeconds: 10,
   rightPanel: "snippets",
+  filesEnabled: true,
   filesFollowTerminal: false,
   editor: "",
 };

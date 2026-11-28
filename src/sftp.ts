@@ -367,6 +367,19 @@ export const sftpApi = {
 };
 
 /** "1.2 MB" style sizes for the file list and the transfers. */
+/** Permissions as `ls -l` shows them, e.g. "drwxr-xr-x"; "" when the server sent none. */
+export function formatMode(entry: FileEntry): string {
+  const mode = entry.permissions;
+  if (!mode) return "";
+  const bit = (mask: number, char: string) => (mode & mask ? char : "-");
+  // Execute place with setuid/setgid/sticky: lower case when also executable.
+  const exec = (mask: number, special: number, char: string) => (mode & special ? (mode & mask ? char : char.toUpperCase()) : bit(mask, "x"));
+  return (entry.isLink ? "l" : entry.isDir ? "d" : "-")
+    + bit(0o400, "r") + bit(0o200, "w") + exec(0o100, 0o4000, "s")
+    + bit(0o040, "r") + bit(0o020, "w") + exec(0o010, 0o2000, "s")
+    + bit(0o004, "r") + bit(0o002, "w") + exec(0o001, 0o1000, "t");
+}
+
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];

@@ -107,6 +107,8 @@ export type AppSettings = {
   keepaliveSeconds: number;
   /** Tab of the right-hand panel. */
   rightPanel: RightPanel;
+  /** File browser (SFTP): off means no file panel and no second SSH connection. */
+  filesEnabled: boolean;
   /** The file browser follows the folder of the active terminal. */
   filesFollowTerminal: boolean;
   /** Program for "Edit" in the file browser (path or command name); "" = system default. */
@@ -195,8 +197,8 @@ export type TerminalContextMenu = {
   split: boolean;
   /** The tab currently types into all panes. */
   broadcast: boolean;
-  /** SSH pane: offers "Open folder in the file browser". */
-  ssh: boolean;
+  /** SSH pane with the file browser on: offers "Open folder in the file browser". */
+  files: boolean;
   /** Folder the shell reported; "" when unknown. */
   cwd: string;
   x: number;

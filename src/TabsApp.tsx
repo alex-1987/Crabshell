@@ -40,13 +40,13 @@ import WelcomeGuide from "./WelcomeGuide";
 import "./styles.css";
 
 /** "Snippets | Files" at the top of the right-hand panel. */
-function PanelSwitch({ active, snippetCount, onChange }: { active: RightPanel; snippetCount: number; onChange: (panel: RightPanel) => void }) {
+function PanelSwitch({ active, snippetCount, files, onChange }: { active: RightPanel; snippetCount: number; files: boolean; onChange: (panel: RightPanel) => void }) {
   return (
     <div aria-label={t("panel.switch")} className="panel-switch" role="tablist">
       <button aria-selected={active === "snippets"} className="panel-switch-tab" onClick={() => onChange("snippets")} role="tab" type="button">
         {t("sidebar.snippets")} <span>{snippetCount}</span>
       </button>
-      <button aria-selected={active === "files"} className="panel-switch-tab" onClick={() => onChange("files")} role="tab" type="button">{t("files.title")}</button>
+      {files && <button aria-selected={active === "files"} className="panel-switch-tab" onClick={() => onChange("files")} role="tab" type="button">{t("files.title")}</button>}
     </div>
   );
 }
@@ -117,13 +117,15 @@ export default function TabsApp() {
     // Only the values matter; a new settings object with the same proxy must not reconnect.
     [appSettings.proxyEnabled, appSettings.proxyType, appSettings.proxyHost, appSettings.proxyPort, appSettings.keepaliveEnabled, appSettings.keepaliveSeconds],
   );
+  /** Tab of the right-hand panel as shown: the snippets while the file browser is off. */
+  const rightPanel: RightPanel = appSettings.filesEnabled ? appSettings.rightPanel : "snippets";
   const onFileLocation = useCallback((location: FileLocation | null) => { fileLocationRef.current = location; }, []);
 
-  // Close file connections of servers that no tab shows any more.
+  // Close file connections of servers that no tab shows any more (all of them with the file browser off).
   const openServerIds = tabs.flatMap((tab) => tab.panes).map((pane) => pane.server?.id ?? "").filter(Boolean).sort().join("\n");
   useEffect(() => {
-    sftpStore.keepOnly(new Set(openServerIds.split("\n").filter(Boolean)));
-  }, [openServerIds]);
+    sftpStore.keepOnly(new Set(appSettings.filesEnabled ? openServerIds.split("\n").filter(Boolean) : []));
+  }, [openServerIds, appSettings.filesEnabled]);
 
   // Files dragged in from the desktop: onto the file browser or onto an SSH terminal.
   const dropRef = useRef<(paths: string[], x: number, y: number) => void>(() => undefined);
@@ -137,7 +139,7 @@ export default function TabsApp() {
   };
   dragOverRef.current = (x, y) => {
     const element = document.elementFromPoint(x, y);
-    const pane = element?.closest<HTMLElement>("[data-pane-kind='ssh']") ?? null;
+    const pane = settingsRef.current.filesEnabled ? element?.closest<HTMLElement>("[data-pane-kind='ssh']") ?? null : null;
     markDropPane(pane);
     setDropTarget(element?.closest(".file-panel") ? "files" : pane ? "terminal" : null);
   };
@@ -257,10 +259,12 @@ export default function TabsApp() {
   const openFolderRef = useRef<(dir: string) => void>(() => undefined);
   const showFilesRef = useRef(() => undefined as void);
   showFilesRef.current = () => {
+    if (!settingsRef.current.filesEnabled) return;
     setRightPanel("files");
     if (!panels.showSnippets) panels.toggleSnippets();
   };
   openFolderRef.current = (dir) => {
+    if (!settingsRef.current.filesEnabled) return;
     setFolderRequest((current) => ({ dir, nonce: (current?.nonce ?? 0) + 1 }));
     setRightPanel("files");
     if (!panels.showSnippets) panels.toggleSnippets();
@@ -320,6 +324,7 @@ export default function TabsApp() {
     terminalStore.setClipboardPreferences(normalized);
     terminalStore.setProxy(activeProxy(normalized));
     terminalStore.setAutoReconnect(normalized.autoReconnect);
+    terminalStore.setFilesEnabled(normalized.filesEnabled);
     terminalStore.setKeepalive(normalized.keepaliveEnabled ? normalized.keepaliveSeconds : null);
     terminalStore.setKeybindings(normalized.keybindings);
     terminalStore.setTerminalFont(normalized.terminalFont);
@@ -502,20 +507,26 @@ export default function TabsApp() {
     if (!panels.showSnippets) panels.toggleSnippets();
   }
 
+  /** Tab the right-hand panel shows: always the snippets while the file browser is off. */
+  function shownPanel(): RightPanel {
+    return settingsRef.current.filesEnabled ? settingsRef.current.rightPanel : "snippets";
+  }
+
   function setRightPanel(panel: RightPanel) {
     if (settingsRef.current.rightPanel !== panel) persistSettings({ ...settingsRef.current, rightPanel: panel });
   }
 
   /** {} in the tab bar: shows the snippets, or hides the panel when it already shows them. */
   function toggleSnippetPanel() {
-    if (panels.showSnippets && settingsRef.current.rightPanel === "snippets") return panels.toggleSnippets();
+    if (panels.showSnippets && shownPanel() === "snippets") return panels.toggleSnippets();
     setRightPanel("snippets");
     if (!panels.showSnippets) panels.toggleSnippets();
   }
 
   /** 📁 in the tab bar: shows the file browser, or hides the panel when it already shows it. */
   function toggleFilePanel() {
-    if (panels.showSnippets && settingsRef.current.rightPanel === "files") return panels.toggleSnippets();
+    if (!settingsRef.current.filesEnabled) return;
+    if (panels.showSnippets && shownPanel() === "files") return panels.toggleSnippets();
     setRightPanel("files");
     if (!panels.showSnippets) panels.toggleSnippets();
   }
@@ -548,7 +559,7 @@ export default function TabsApp() {
   async function dropOnTerminal(paneId: string, localPaths: string[]) {
     const pane = tabs.flatMap((tab) => tab.panes).find((item) => item.id === paneId);
     const server = pane?.kind === "ssh" ? pane.server : null;
-    if (!server) return;
+    if (!server || !settingsRef.current.filesEnabled) return;
     try {
       const connection = await sftpStore.connect(server, sftpOptions);
       await requestUpload({ connection, server, dir: sftpStore.lastDir(server.id) ?? connection.home }, localPaths, true);
@@ -664,8 +675,8 @@ export default function TabsApp() {
             <button aria-label={t("topbar.openSettings")} className="tabbar-button" disabled={!usable} onClick={() => setSettingsOpen({})} title={t("topbar.settings")} type="button"><span aria-hidden="true">⚙</span></button>
             {/* The snippet panel opens on the right, so its toggle sits at the far right. */}
             <span aria-hidden="true" className="tabbar-separator" />
-            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets && appSettings.rightPanel === "snippets"} className="tabbar-button" disabled={!usable} onClick={toggleSnippetPanel} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
-            <button aria-controls="snippet-panel" aria-label={t("files.toggle")} aria-pressed={panels.showSnippets && appSettings.rightPanel === "files"} className="tabbar-button" disabled={!usable} onClick={toggleFilePanel} title={t("files.toggle")} type="button"><span aria-hidden="true">📁</span></button>
+            <button aria-controls="snippet-panel" aria-label={snippetsLabel} aria-pressed={panels.showSnippets && rightPanel === "snippets"} className="tabbar-button" disabled={!usable} onClick={toggleSnippetPanel} title={snippetsLabel} type="button"><span aria-hidden="true">{"{}"}</span></button>
+            {appSettings.filesEnabled && <button aria-controls="snippet-panel" aria-label={t("files.toggle")} aria-pressed={panels.showSnippets && rightPanel === "files"} className="tabbar-button" disabled={!usable} onClick={toggleFilePanel} title={t("files.toggle")} type="button"><span aria-hidden="true">📁</span></button>}
           </div>
         </div>
 
@@ -680,6 +691,7 @@ export default function TabsApp() {
             <div className="terminal-empty terminal-empty-guide">
               <WelcomeGuide
                 doubleClick={appSettings.serverOpenClick === "double"}
+                filesEnabled={appSettings.filesEnabled}
                 checkUpdates={appSettings.checkUpdates}
                 hasServers={savedHosts.length > 0}
                 onUpdateChoice={(enabled) => persistSettings({ ...settingsRef.current, checkUpdates: enabled, updatesAsked: true })}
@@ -696,7 +708,7 @@ export default function TabsApp() {
 
       </main>
 
-      {panels.showSnippets && appSettings.rightPanel === "files" && (
+      {panels.showSnippets && rightPanel === "files" && (
         <>
           <div {...panels.resizerProps("snippets")} />
           <FilePanel
@@ -711,17 +723,17 @@ export default function TabsApp() {
             onLocation={onFileLocation}
             onUpload={(location, paths) => void requestUpload(location, paths, false)}
             options={sftpOptions}
-            panelSwitch={<PanelSwitch active="files" onChange={setRightPanel} snippetCount={snippets.snippets.length} />}
+            panelSwitch={<PanelSwitch active="files" files onChange={setRightPanel} snippetCount={snippets.snippets.length} />}
             server={fileServer}
           />
           <button aria-label={t("snippetPanel.hide")} className="sidebar-backdrop snippet-panel-backdrop" onClick={panels.toggleSnippets} tabIndex={-1} type="button" />
         </>
       )}
-      {panels.showSnippets && appSettings.rightPanel === "snippets" && (
+      {panels.showSnippets && rightPanel === "snippets" && (
         <>
           <div {...panels.resizerProps("snippets")} />
           <SnippetPanel
-            panelSwitch={<PanelSwitch active="snippets" onChange={setRightPanel} snippetCount={snippets.snippets.length} />}
+            panelSwitch={<PanelSwitch active="snippets" files={appSettings.filesEnabled} onChange={setRightPanel} snippetCount={snippets.snippets.length} />}
             canInsert={canInsertSnippet}
             doubleClick={appSettings.snippetInsertClick === "double"}
             error={snippets.error}
