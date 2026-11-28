@@ -80,7 +80,8 @@ pub(crate) fn proxy_command(proxy: &ProxyConfig) -> Result<String, String> {
         "{} {HELPER_FLAG} {} {} {} %h %p",
         quote_program(exe),
         proxy.kind.name(),
-        proxy.host,
+        // validate_host allows `%` (IPv6 zone ids like fe80::1%eth0).
+        proxy.host.replace('%', "%%"),
         proxy.port
     ))
 }
@@ -261,6 +262,9 @@ pub fn run_helper(args: &[String]) -> Option<i32> {
             host: proxy_host.clone(),
             port: proxy_port.parse().ok()?,
         };
+        // The target comes from OpenSSH (`%h`, possibly a HostName from ~/.ssh/config); it ends
+        // up in the CONNECT line, so it gets the same check as any other host.
+        validate_host(host).ok()?;
         Some((proxy, host.clone(), port.parse::<u16>().ok()?))
     })();
     let Some((proxy, host, port)) = parsed else {
@@ -424,6 +428,14 @@ mod tests {
             ..proxy
         };
         assert!(proxy_command(&bad).is_err());
+
+        let zoned = ProxyConfig {
+            host: "fe80::1%eth0".into(),
+            ..bad
+        };
+        assert!(proxy_command(&zoned)
+            .unwrap()
+            .ends_with(" http fe80::1%%eth0 8080 %h %p"));
     }
 
     #[test]
@@ -434,5 +446,31 @@ mod tests {
             run_helper(&["crabshell".into(), HELPER_FLAG.into(), "socks5".into()]),
             Some(2)
         );
+    }
+
+    #[test]
+    fn helper_mode_refuses_invalid_targets() {
+        let args = |host: &str| -> Vec<String> {
+            [
+                "crabshell",
+                HELPER_FLAG,
+                "http",
+                "proxy",
+                "8080",
+                host,
+                "22",
+            ]
+            .map(String::from)
+            .to_vec()
+        };
+        assert_eq!(run_helper(&args("web\r\nX-Evil: 1")), Some(2));
+        assert_eq!(
+            run_helper(&args(
+                "web
+X-Evil: 1"
+            )),
+            Some(2)
+        );
+        assert_eq!(run_helper(&args("")), Some(2));
     }
 }

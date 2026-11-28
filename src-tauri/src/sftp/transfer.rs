@@ -41,7 +41,27 @@ pub(crate) fn safe_name(name: &str) -> bool {
         && name != "."
         && name != ".."
         && !name.contains(['/', '\\', '\0'])
-        && !(cfg!(windows) && name.contains(':'))
+        && !(cfg!(windows) && !windows_name(name))
+}
+
+/// Windows refuses `<>:"|?*`, names ending in a dot or space, and device names (CON, NUL.txt …).
+fn windows_name(name: &str) -> bool {
+    const DEVICES: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or(name)
+        .trim_end()
+        .to_ascii_uppercase();
+    let device = DEVICES.contains(&stem.as_str())
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit()
+            && stem.as_bytes()[3] != b'0');
+    !device
+        && !name.ends_with(['.', ' '])
+        && !name.contains(['<', '>', ':', '"', '|', '?', '*'])
+        && !name.chars().any(char::is_control)
 }
 
 fn too_many() -> String {
@@ -376,6 +396,25 @@ mod tests {
         }
         assert!(safe_name(".bashrc"));
         assert!(safe_name("file name.txt"));
+    }
+
+    #[test]
+    fn knows_names_windows_refuses() {
+        for name in [
+            "CON", "nul.txt", "Aux", "com1", "LPT9.log", "a?b", "x:y", "a<b", "dot.", "space ",
+        ] {
+            assert!(!super::windows_name(name), "{name:?}");
+        }
+        for name in [
+            "console",
+            "COM0",
+            "nullable.txt",
+            ".bashrc",
+            "file name.txt",
+            "COM10",
+        ] {
+            assert!(super::windows_name(name), "{name:?}");
+        }
     }
 
     #[test]

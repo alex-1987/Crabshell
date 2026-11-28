@@ -349,10 +349,30 @@ fn download_for_edit(
     if attrs.size.unwrap_or(0) > MAX_EDIT_BYTES {
         return Err("Only files up to 5 MB can be edited".to_string());
     }
-    std::fs::create_dir_all(dir).map_err(|_| "Could not create the local folder".to_string())?;
+    create_private_dir(dir).map_err(|_| "Could not create the local folder".to_string())?;
     let cancel = AtomicBool::new(false);
     client.download(remote, local, &cancel, &mut |_| {})?;
     Ok((attrs.modified, attrs.size))
+}
+
+/// Creates the edit folder (and the cache folders above it) readable by this user only: the
+/// copies can hold secrets (configs, keys), and the home folder may be readable by others.
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+        // Folders that existed before keep their mode; the edit folder and its base are fixed.
+        for folder in [Some(dir), dir.parent()].into_iter().flatten() {
+            std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o700))?;
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(dir)
 }
 
 /// Opens the local copy again (the editor was closed or is behind other windows).
@@ -558,6 +578,21 @@ mod tests {
         assert_eq!(receiver.recv_timeout(Duration::from_secs(3)).unwrap(), "b");
         std::fs::write(base.join("a/f.txt"), "changed a").unwrap();
         assert_eq!(receiver.recv_timeout(Duration::from_secs(3)).unwrap(), "a");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn edit_folders_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("crabshell-private-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("edit").join("edit-1");
+        create_private_dir(&dir).unwrap();
+        for folder in [&dir, &base.join("edit")] {
+            let mode = std::fs::metadata(folder).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{folder:?}");
+        }
         std::fs::remove_dir_all(&base).unwrap();
     }
 
